@@ -45,6 +45,7 @@ def ensure_data_files():
             }, f, indent=2, ensure_ascii=False)
 
 def log(log_entry):
+    os.makedirs(DATA_DIR, exist_ok=True)
     log_file = os.path.join(LOG_DIR, "refresh_log.json")
     if os.path.exists(log_file):
         with open(log_file, 'r', encoding='utf-8') as f:
