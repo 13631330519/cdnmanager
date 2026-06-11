@@ -1,4 +1,5 @@
 import hmac
+import hashlib
 from datetime import datetime
 from urllib.parse import urlparse
 from flask import Blueprint, request, jsonify, current_app
@@ -15,7 +16,7 @@ external_bp = Blueprint('external_bp', __name__)
 def verify_external_signature(url, timestamp, signature):
     secret = current_app.config.get('EXTERNAL_API_SECRET', 'cdn_manager_external_secret')
     message = f"{url}{timestamp}".encode('utf-8')
-    expected = hmac.new(secret.encode('utf-8'), message, hmac.sha256).hexdigest()
+    expected = hmac.new(secret.encode('utf-8'), message, hashlib.sha256).hexdigest()
     return expected == signature
 
 @external_bp.route('/api/refresh_url', methods=['POST'])
