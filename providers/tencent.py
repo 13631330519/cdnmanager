@@ -67,8 +67,7 @@ def refresh_tencentcdn(domain, credentials, url=None):
 
     urls = [url] if url else [f"https://{domain}/", f"http://{domain}/"]
     refresh_params = {
-        "Urls": urls,
-        "FlushType": "flush"
+        "Urls": urls
     } if url and not url.endswith('/') else{
         "Paths": urls,
         "FlushType": "flush"
