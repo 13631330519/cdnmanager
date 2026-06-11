@@ -140,7 +140,7 @@ def start_task_polling_thread():
                 refresh_pending_tasks()
             except Exception:
                 pass
-            time.sleep(10)
+            time.sleep(30)
 
     thread = threading.Thread(target=worker, daemon=True)
     thread.start()
