@@ -116,7 +116,7 @@ def check_tencent_task(task_id, credentials):
         error_info = data.get('Response', {}).get('Error', {})
         msg = error_info.get('Message') if isinstance(error_info, dict) else str(error_info)
         return {"success": False, "message": f"查询腾讯云刷新任务失败: {msg}", "provider": "tencent"}
-    tasks = data.get('Response', {}).get('Tasks' if task_action == "DescribeRefreshTasks" else 'PurgeLogs', [])
+    tasks = data.get('Response', {}).get('PurgeLogs', [])
     if not tasks:
         return {"success": False, "message": "未找到腾讯云刷新任务", "provider": "tencent"}
     task = tasks[0]
