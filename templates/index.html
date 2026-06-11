@@ -193,8 +193,8 @@
                                 {% set bound = credential_lookup[domain.provider].get(domain.credential_id) if domain.credential_id else None %}
                                 {{ bound.name if bound else (domain.credential_id if domain.credential_id else '-') }}
                             </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ domain.refresh_status or '—' }}</td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ domain.last_refreshed_at | default('-') }}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 refresh-status-cell">{{ domain.refresh_status or '—' }}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 refresh-time-cell">{{ domain.last_refreshed_at | default('-') }}</td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ domain.added_by }}</td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ domain.added_at | datetimeformat }}</td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
@@ -428,23 +428,103 @@
             });
         });
 
+        async function fetchDomainStatus(domain) {
+            const response = await fetch(`/api/task_status?domain=${encodeURIComponent(domain)}`);
+            if (!response.ok) {
+                const data = await response.json().catch(() => ({}));
+                throw new Error(data.error || data.message || `请求失败: ${response.status}`);
+            }
+            return response.json();
+        }
+
+        function updateDomainRowStatus(row, statusText, updatedAt) {
+            const statusCell = row.querySelector('.refresh-status-cell');
+            const timeCell = row.querySelector('.refresh-time-cell');
+            if (statusCell) statusCell.textContent = statusText;
+            if (timeCell) timeCell.textContent = updatedAt || timeCell.textContent || '-';
+        }
+
+        async function pollDomainRefreshStatus(domain, row, btn) {
+            const POLL_INTERVAL = 30000;
+            const originalText = btn ? btn.textContent : '刷新';
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = '刷新中...';
+            }
+            while (true) {
+                try {
+                    const data = await fetchDomainStatus(domain);
+                    if (data.success) {
+                        updateDomainRowStatus(row, data.refresh_status || '-', data.last_refreshed_at || '-');
+                        if (data.refresh_status !== '正在刷新') {
+                            if (btn) {
+                                btn.disabled = false;
+                                btn.textContent = originalText;
+                            }
+                            return data;
+                        }
+                    } else {
+                        throw new Error(data.error || data.message || '状态查询失败');
+                    }
+                } catch (err) {
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.textContent = originalText;
+                    }
+                    alert('状态查询失败: ' + err.message);
+                    return null;
+                }
+                await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
+            }
+        }
+
+        function startExistingRefreshPolling() {
+            document.querySelectorAll('tr').forEach(row => {
+                const statusCell = row.querySelector('.refresh-status-cell');
+                const btn = row.querySelector('.refresh-btn');
+                if (!statusCell || !btn) return;
+                const domain = btn.dataset.domain;
+                if (statusCell.textContent.trim() === '正在刷新') {
+                    pollDomainRefreshStatus(domain, row, btn);
+                }
+            });
+        }
+
+        startExistingRefreshPolling();
+
         document.querySelectorAll('.refresh-btn').forEach(btn => {
             btn.addEventListener('click', async () => {
                 const domain = btn.dataset.domain;
-                const result = confirm(`确认刷新域名 ${domain} 的CDN缓存？`);
-                if (!result) return;
+                const row = btn.closest('tr');
+                const confirmed = confirm(`确认刷新域名 ${domain} 的CDN缓存？`);
+                if (!confirmed) return;
+
+                btn.disabled = true;
+                const originalText = btn.textContent;
+                btn.textContent = '刷新中...';
+                if (row) {
+                    updateDomainRowStatus(row, '正在刷新', row.querySelector('.refresh-time-cell')?.textContent || '-');
+                }
 
                 const response = await fetch('/refresh_domain', {
                     method: 'POST',
                     body: new URLSearchParams({ domain })
                 });
                 const data = await response.json();
-                if (data.success) {
-                    alert(data.message);
-                } else {
-                    // 后端可能返回 `error` 或 `message`，兼容两种字段并在没有信息时输出整个响应
+                if (!data.success) {
+                    btn.disabled = false;
+                    btn.textContent = originalText;
                     const errText = data.error || data.message || JSON.stringify(data);
                     alert('刷新失败: ' + errText);
+                    if (row) {
+                        updateDomainRowStatus(row, data.error ? '刷新失败' : '未知状态', row.querySelector('.refresh-time-cell')?.textContent || '-');
+                    }
+                    return;
+                }
+
+                const finalStatus = await pollDomainRefreshStatus(domain, row, btn);
+                if (finalStatus && finalStatus.success) {
+                    alert(`刷新完成：${finalStatus.refresh_status || '未知'}`);
                 }
             });
         });

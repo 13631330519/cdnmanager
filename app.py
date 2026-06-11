@@ -27,14 +27,7 @@ app.register_blueprint(credential_bp)
 app.register_blueprint(user_bp)
 app.register_blueprint(external_bp)
 
-task_polling_started = False
-
-@app.before_request
-def ensure_task_polling_started():
-    global task_polling_started
-    if not task_polling_started:
-        start_task_polling_thread()
-        task_polling_started = True
+start_task_polling_thread()
 
 @app.route('/')
 def index():

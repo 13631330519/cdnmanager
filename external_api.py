@@ -19,6 +19,31 @@ def verify_external_signature(url, timestamp, signature):
     expected = hmac.new(secret.encode('utf-8'), message, hashlib.sha256).hexdigest()
     return expected == signature
 
+
+@external_bp.route('/api/task_status', methods=['GET'])
+def api_task_status():
+    domain = request.args.get('domain')
+    if not domain:
+        return jsonify({"success": False, "error": "domain 参数必填"}), 400
+
+    domains = load_domains()
+    target = next((d for d in domains if d['domain'] == domain), None)
+    if not target:
+        return jsonify({"success": False, "error": "域名不存在"}), 404
+
+    return jsonify({
+        "success": True,
+        "domain": target['domain'],
+        "provider": target.get('provider'),
+        "refresh_status": target.get('refresh_status', REFRESH_STATUS_NONE),
+        "last_refreshed_at": target.get('last_refreshed_at'),
+        "task_id": target.get('task_id'),
+        "task_action": target.get('refresh_task_action'),
+        "task_status": target.get('refresh_task_status'),
+        "status_detail": target.get('refresh_task_detail')
+    })
+
+
 @external_bp.route('/api/refresh_url', methods=['POST'])
 def api_refresh_url():
     data = request.get_json(silent=True)
