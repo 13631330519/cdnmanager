@@ -5,6 +5,7 @@ from urllib.parse import urlparse
 from flask import Blueprint, request, jsonify, current_app
 from credentials import get_credential
 from domains import load_domains, find_bound_domain, record_refresh_submission
+from providers.akamai import refresh_akamai
 from providers.alicdn import refresh_alicdn
 from providers.tencent import refresh_tencentcdn
 from providers.lingzhi import refresh_lingzhi
@@ -89,6 +90,8 @@ def api_refresh_url():
         result = refresh_tencentcdn(domain_record['domain'], credential, url=url)
     elif provider == 'lingzhi':
         result = refresh_lingzhi(domain_record['domain'], credential, url=url)
+    elif provider == 'akamai':
+        result = refresh_akamai(domain_record['domain'], credential, url=url)
     else:
         return jsonify({"success": False, "error": "不支持的提供商"}), 400
 
