@@ -38,7 +38,6 @@ def api_task_status():
         "refresh_status": target.get('refresh_status', REFRESH_STATUS_NONE),
         "last_refreshed_at": target.get('last_refreshed_at'),
         "task_id": target.get('task_id'),
-        "task_action": target.get('refresh_task_action'),
         "task_status": target.get('refresh_task_status'),
         "status_detail": target.get('refresh_task_detail')
     })

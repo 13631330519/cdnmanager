@@ -9,7 +9,7 @@ from credentials import get_credential
 from providers.akamai import refresh_akamai
 from providers.alicdn import refresh_alicdn, check_alicdn_task
 from providers.tencent import refresh_tencentcdn, check_tencent_task
-from providers.lingzhi import refresh_lingzhi
+from providers.lingzhi import check_lingzhi_task, refresh_lingzhi
 from users import load_users
 
 domain_bp = Blueprint('domain_bp', __name__)
@@ -68,7 +68,6 @@ def record_refresh_submission(domain_name, result):
 
     updates = {
         'task_id': result.get('task_id'),
-        'refresh_task_action': result.get('refresh_task_action'),
         'refresh_task_status': None,
         'refresh_task_detail': None,
         'refresh_status': refresh_status if refresh_status is not None else (REFRESH_STATUS_REFRESHING if result.get('success') else REFRESH_STATUS_FAILED),
@@ -95,8 +94,7 @@ def refresh_pending_tasks():
         if domain_record.get('refresh_status') != REFRESH_STATUS_REFRESHING:
             continue
         task_id = domain_record.get('task_id')
-        task_action = domain_record.get('refresh_task_action')
-        if not task_id or not task_action:
+        if not task_id:
             continue
 
         provider = domain_record.get('provider')
@@ -113,6 +111,8 @@ def refresh_pending_tasks():
             task_info = check_alicdn_task(task_id, credentials)
         elif provider == 'tencent':
             task_info = check_tencent_task(task_id, credentials)
+        elif provider == 'lingzhi':
+            task_info = check_lingzhi_task(domain_record['domain'], credentials)
         else:
             continue
 
@@ -188,7 +188,6 @@ def add_domain():
         "refresh_status": REFRESH_STATUS_NONE,
         "last_refreshed_at": None,
         "task_id": None,
-        "refresh_task_action": None,
         "refresh_task_status": None,
         "refresh_task_detail": None
     })
@@ -224,7 +223,6 @@ def edit_domain():
     target['credential_id'] = credential_id
     target['allowed_users'] = allowed_users
     target['task_id'] = None
-    target['refresh_task_action'] = None
     target['refresh_task_status'] = None
     target['refresh_task_detail'] = None
     target['refresh_status'] = REFRESH_STATUS_NONE

@@ -47,8 +47,7 @@ def refresh_alicdn(domain, credentials, url=None):
             "message": f"阿里云刷新请求已提交: {url or domain}, 任务ID={task_id}",
             "provider": "alicdn",
             "task_id": task_id,
-            "refresh_status": "正在刷新",
-            "refresh_task_action": "DescribeRefreshTasks"
+            "refresh_status": "正在刷新"
         }
     except Exception as e:
         return {"success": False, "message": f"阿里云刷新请求异常: {e}", "provider": "alicdn"}
