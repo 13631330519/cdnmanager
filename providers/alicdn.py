@@ -14,7 +14,7 @@ def refresh_alicdn(domain, credentials, url=None):
     if not access_key or not secret_key:
         return {"success": False, "message": "阿里云凭据不完整，需填写 AccessKey 和 SecretKey", "provider": "alicdn"}
 
-    object_paths = [url] if url else [f"https://{domain}/"]
+    object_paths = [url] if url else [f"https://{domain}/",f"http://{domain}/"]
 
     if url and not url.endswith('/'):
         object_type = 'File'
