@@ -5,14 +5,18 @@ from flask import Flask, render_template, request, redirect, url_for, session, f
 from werkzeug.security import check_password_hash
 
 from common import ensure_data_files, VALID_PROVIDERS, PROVIDER_LABELS
+from config import SECRET_KEY, EXTERNAL_API_SECRET, APP_PORT, PERMANENT_SESSION_LIFETIME
 from credentials import load_credentials, credential_bp
 from domains import get_visible_domains, load_domains, domain_bp, start_task_polling_thread
 from users import load_users, user_bp
 from external_api import external_bp
 
 app = Flask(__name__)
-app.secret_key = "cdn_manager_2026_secret_key_789"
-app.config['EXTERNAL_API_SECRET'] = os.environ.get('EXTERNAL_API_SECRET', 'cdn_manager_external_secret')
+app.config['SECRET_KEY'] = SECRET_KEY
+app.secret_key = SECRET_KEY
+app.config['EXTERNAL_API_SECRET'] = EXTERNAL_API_SECRET
+app.config['APP_PORT'] = APP_PORT
+app.permanent_session_lifetime = PERMANENT_SESSION_LIFETIME
 
 @app.template_filter('datetimeformat')
 def datetimeformat(value, format='%Y-%m-%d %H:%M:%S'):
@@ -53,6 +57,7 @@ def login():
         users = load_users()
         user = next((u for u in users if u['username'] == username), None)
         if user and check_password_hash(user['password'], password):
+            session.permanent = True
             session['username'] = username
             return redirect(url_for('index'))
         flash('用户名或密码错误')
@@ -64,4 +69,4 @@ def logout():
     return redirect(url_for('login'))
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=80, debug=True)
+    app.run(host='0.0.0.0', port=app.config['APP_PORT'], debug=True)
