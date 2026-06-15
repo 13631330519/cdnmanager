@@ -271,7 +271,6 @@
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">提供商</th>
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">状态</th>
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">提交时间</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">更详细</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-200">
@@ -281,7 +280,6 @@
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ url.provider or '-' }}</td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 url-refresh-status-cell">{{ url.refresh_status or url.get('refresh_status') or '-' }}</td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 url-time-cell">{{ url.completed_at or url.get('completed_at') or url.submitted_at or url.get('submitted_at') or '-' }}</td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 url-detail-cell">{{ url.task_id or url.get('task_id') or url.get('status_detail') or '-' }}</td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -532,13 +530,11 @@
             return response.json();
         }
 
-        function updateUrlRowStatus(row, statusText, updatedAt, detailText) {
+        function updateUrlRowStatus(row, statusText, updatedAt) {
             const statusCell = row.querySelector('.url-refresh-status-cell');
             const timeCell = row.querySelector('.url-time-cell');
-            const detailCell = row.querySelector('.url-detail-cell');
             if (statusCell) statusCell.textContent = statusText;
             if (timeCell) timeCell.textContent = updatedAt || timeCell.textContent || '-';
-            if (detailCell && detailText !== undefined) detailCell.textContent = detailText || '-';
         }
 
         async function pollUrlRefreshStatus(url, row) {
@@ -547,7 +543,7 @@
                 try {
                     const data = await fetchUrlStatus(url);
                     if (data.success) {
-                        updateUrlRowStatus(row, data.refresh_status || '-', data.completed_at || data.submitted_at || '-', data.status_detail || '');
+                        updateUrlRowStatus(row, data.refresh_status || '-', data.completed_at || data.submitted_at || '-');
                         if (data.refresh_status !== '正在刷新') {
                             return data;
                         }

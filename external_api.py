@@ -10,7 +10,7 @@ from providers.akamai import refresh_akamai
 from providers.alicdn import refresh_alicdn
 from providers.tencent import refresh_tencentcdn
 from providers.lingzhi import refresh_lingzhi
-from common import REFRESH_STATUS_NONE, safe_save_urls, load_urls
+from common import REFRESH_STATUS_COMPLETE, REFRESH_STATUS_FAILED, REFRESH_STATUS_NONE, REFRESH_STATUS_REFRESHING, safe_save_urls, load_urls
 
 external_bp = Blueprint('external_bp', __name__)
 
@@ -113,6 +113,9 @@ def api_refresh_url():
     else:
         return jsonify({"success": False, "error": "不支持的提供商"}), 400
     
+    refresh_status = result.get('refresh_status')
+    if result.get('success') and not result.get('task_id'):
+        refresh_status = REFRESH_STATUS_COMPLETE
     safe_save_urls(lambda urls: (True,urls + [{
         "url": url,
         "provider": provider,
@@ -120,7 +123,7 @@ def api_refresh_url():
         "submitted_at": datetime.now().isoformat(),
         "completed_at": None,
         "task_id": result.get('task_id'),
-        "refresh_status": result.get('refresh_status')
+        "refresh_status": refresh_status if refresh_status is not None else (REFRESH_STATUS_REFRESHING if result.get('success') else REFRESH_STATUS_FAILED)
     }]))
 
     return jsonify(result)
