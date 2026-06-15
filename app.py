@@ -4,7 +4,7 @@ from datetime import datetime
 from flask import Flask, render_template, request, redirect, url_for, session, flash
 from werkzeug.security import check_password_hash
 
-from common import ensure_data_files, VALID_PROVIDERS, PROVIDER_LABELS, load_urls
+from common import REFRESH_STATUS_REFRESHING, ensure_data_files, VALID_PROVIDERS, PROVIDER_LABELS, load_urls
 from config import SECRET_KEY, EXTERNAL_API_SECRET, APP_PORT, PERMANENT_SESSION_LIFETIME
 from credentials import load_credentials, credential_bp
 from domains import get_visible_domains, domain_bp, start_task_polling_thread
@@ -33,6 +33,21 @@ app.register_blueprint(external_bp)
 
 start_task_polling_thread()
 
+def get_urls_with_refreshing(urls):
+    if not urls:
+        return []
+    n = len(urls)
+    start_index = max(0, n - 20)
+    
+    current_index = start_index - 1
+    while current_index >= 0:
+        if urls[current_index].get('refresh_status') == REFRESH_STATUS_REFRESHING:
+            current_index -= 1
+        else:
+            break
+    final_start_index = current_index + 1
+    return urls[final_start_index:]
+
 @app.route('/')
 def index():
     if 'username' not in session:
@@ -48,7 +63,7 @@ def index():
     }
     provider_credentials_json = json.dumps(credentials, ensure_ascii=False)
     urls = load_urls()
-    latest_urls = list(reversed(urls[-20:])) if isinstance(urls, list) else []
+    latest_urls = get_urls_with_refreshing(urls) if isinstance(urls, list) else []
     return render_template('index.html', user=user, domains=domains, credentials=credentials, credential_lookup=credential_lookup, provider_labels=PROVIDER_LABELS, provider_credentials_json=provider_credentials_json, users=users, all_usernames=all_usernames, latest_urls=latest_urls)
 
 @app.route('/login', methods=['GET', 'POST'])

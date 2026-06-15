@@ -280,7 +280,7 @@
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ url.url or url.get('url') or '-' }}</td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ url.provider or '-' }}</td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ url.refresh_status or url.get('refresh_status') or '-' }}</td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ url.completed_at or url.get('completed_at') or url.created_at or url.get('created_at') or '-' }}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ url.completed_at or url.get('completed_at') or url.submitted_at or url.get('submitted_at') or '-' }}</td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ url.task_id or url.get('task_id') or url.get('status_detail') or '-' }}</td>
                         </tr>
                         {% endfor %}
