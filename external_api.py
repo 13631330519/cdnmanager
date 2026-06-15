@@ -10,7 +10,7 @@ from providers.akamai import refresh_akamai
 from providers.alicdn import refresh_alicdn
 from providers.tencent import refresh_tencentcdn
 from providers.lingzhi import refresh_lingzhi
-from common import REFRESH_STATUS_NONE,safe_save_urls
+from common import REFRESH_STATUS_NONE, safe_save_urls, load_urls
 
 external_bp = Blueprint('external_bp', __name__)
 
@@ -24,23 +24,41 @@ def verify_external_signature(url, timestamp, signature):
 @external_bp.route('/api/task_status', methods=['GET'])
 def api_task_status():
     domain = request.args.get('domain')
-    if not domain:
-        return jsonify({"success": False, "error": "domain 参数必填"}), 400
+    url = request.args.get('url')
+    if not domain and not url:
+        return jsonify({"success": False, "error": "domain 或 url 参数必填"}), 400
 
-    domains = load_domains()
-    target = next((d for d in domains if d['domain'] == domain), None)
+    if domain:
+        domains = load_domains()
+        target = next((d for d in domains if d['domain'] == domain), None)
+        if not target:
+            return jsonify({"success": False, "error": "域名不存在"}), 404
+
+        return jsonify({
+            "success": True,
+            "domain": target['domain'],
+            "provider": target.get('provider'),
+            "refresh_status": target.get('refresh_status', REFRESH_STATUS_NONE),
+            "last_refreshed_at": target.get('last_refreshed_at'),
+            "task_id": target.get('task_id'),
+            "task_status": target.get('refresh_task_status'),
+            "status_detail": target.get('refresh_task_detail')
+        })
+
+    urls = load_urls()
+    target = next((u for u in urls if u.get('url') == url), None)
     if not target:
-        return jsonify({"success": False, "error": "域名不存在"}), 404
+        return jsonify({"success": False, "error": "URL 记录不存在"}), 404
 
     return jsonify({
         "success": True,
-        "domain": target['domain'],
+        "url": target.get('url'),
         "provider": target.get('provider'),
         "refresh_status": target.get('refresh_status', REFRESH_STATUS_NONE),
-        "last_refreshed_at": target.get('last_refreshed_at'),
+        "submitted_at": target.get('submitted_at'),
+        "completed_at": target.get('completed_at'),
         "task_id": target.get('task_id'),
-        "task_status": target.get('refresh_task_status'),
-        "status_detail": target.get('refresh_task_detail')
+        "status_detail": target.get('status_detail')
     })
 
 

@@ -276,12 +276,12 @@
                     </thead>
                     <tbody class="divide-y divide-gray-200">
                         {% for url in latest_urls %}
-                        <tr class="hover:bg-gray-50 transition">
+                        <tr class="hover:bg-gray-50 transition" data-url="{{ url.url or url.get('url') }}">
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ url.url or url.get('url') or '-' }}</td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ url.provider or '-' }}</td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ url.refresh_status or url.get('refresh_status') or '-' }}</td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ url.completed_at or url.get('completed_at') or url.submitted_at or url.get('submitted_at') or '-' }}</td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ url.task_id or url.get('task_id') or url.get('status_detail') or '-' }}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 url-refresh-status-cell">{{ url.refresh_status or url.get('refresh_status') or '-' }}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 url-time-cell">{{ url.completed_at or url.get('completed_at') or url.submitted_at or url.get('submitted_at') or '-' }}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 url-detail-cell">{{ url.task_id or url.get('task_id') or url.get('status_detail') or '-' }}</td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -523,7 +523,58 @@
             });
         }
 
+        async function fetchUrlStatus(url) {
+            const response = await fetch(`/api/task_status?url=${encodeURIComponent(url)}`);
+            if (!response.ok) {
+                const data = await response.json().catch(() => ({}));
+                throw new Error(data.error || data.message || `请求失败: ${response.status}`);
+            }
+            return response.json();
+        }
+
+        function updateUrlRowStatus(row, statusText, updatedAt, detailText) {
+            const statusCell = row.querySelector('.url-refresh-status-cell');
+            const timeCell = row.querySelector('.url-time-cell');
+            const detailCell = row.querySelector('.url-detail-cell');
+            if (statusCell) statusCell.textContent = statusText;
+            if (timeCell) timeCell.textContent = updatedAt || timeCell.textContent || '-';
+            if (detailCell && detailText !== undefined) detailCell.textContent = detailText || '-';
+        }
+
+        async function pollUrlRefreshStatus(url, row) {
+            const POLL_INTERVAL = 30000;
+            while (true) {
+                try {
+                    const data = await fetchUrlStatus(url);
+                    if (data.success) {
+                        updateUrlRowStatus(row, data.refresh_status || '-', data.completed_at || data.submitted_at || '-', data.status_detail || '');
+                        if (data.refresh_status !== '正在刷新') {
+                            return data;
+                        }
+                    } else {
+                        throw new Error(data.error || data.message || '状态查询失败');
+                    }
+                } catch (err) {
+                    console.error('URL 状态查询失败:', err);
+                    return null;
+                }
+                await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
+            }
+        }
+
+        function startExistingUrlRefreshPolling() {
+            document.querySelectorAll('tr[data-url]').forEach(row => {
+                const statusCell = row.querySelector('.url-refresh-status-cell');
+                if (!statusCell) return;
+                const url = row.dataset.url;
+                if (url && statusCell.textContent.trim() === '正在刷新') {
+                    pollUrlRefreshStatus(url, row);
+                }
+            });
+        }
+
         startExistingRefreshPolling();
+        startExistingUrlRefreshPolling();
 
         document.querySelectorAll('.refresh-btn').forEach(btn => {
             btn.addEventListener('click', async () => {
