@@ -275,7 +275,7 @@
                     </thead>
                     <tbody class="divide-y divide-gray-200">
                         {% for url in latest_urls %}
-                        <tr class="hover:bg-gray-50 transition" data-url="{{ url.url or url.get('url') }}">
+                        <tr class="hover:bg-gray-50 transition" data-url="{{ url.url or url.get('url') }}" data-url-idx="{{ url._idx }}">
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ url.url or url.get('url') or '-' }}</td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ url.provider or '-' }}</td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 url-refresh-status-cell">{{ url.refresh_status or url.get('refresh_status') or '-' }}</td>
@@ -521,8 +521,9 @@
             });
         }
 
-        async function fetchUrlStatus(url) {
-            const response = await fetch(`/api/task_status?url=${encodeURIComponent(url)}`);
+        async function fetchUrlStatus(url, idx) {
+            const q = (typeof idx !== 'undefined' && idx !== null) ? `url_idx=${encodeURIComponent(idx)}` : `url=${encodeURIComponent(url)}`;
+            const response = await fetch(`/api/task_status?${q}`);
             if (!response.ok) {
                 const data = await response.json().catch(() => ({}));
                 throw new Error(data.error || data.message || `请求失败: ${response.status}`);
@@ -537,11 +538,11 @@
             if (timeCell) timeCell.textContent = updatedAt || timeCell.textContent || '-';
         }
 
-        async function pollUrlRefreshStatus(url, row) {
+        async function pollUrlRefreshStatus(url, row, idx) {
             const POLL_INTERVAL = 30000;
             while (true) {
                 try {
-                    const data = await fetchUrlStatus(url);
+                    const data = await fetchUrlStatus(url, idx);
                     if (data.success) {
                         updateUrlRowStatus(row, data.refresh_status || '-', data.completed_at || data.submitted_at || '-');
                         if (data.refresh_status !== '正在刷新') {
@@ -563,8 +564,9 @@
                 const statusCell = row.querySelector('.url-refresh-status-cell');
                 if (!statusCell) return;
                 const url = row.dataset.url;
+                const idx = row.dataset.urlIdx ? parseInt(row.dataset.urlIdx, 10) : null;
                 if (url && statusCell.textContent.trim() === '正在刷新') {
-                    pollUrlRefreshStatus(url, row);
+                    pollUrlRefreshStatus(url, row, idx);
                 }
             });
         }

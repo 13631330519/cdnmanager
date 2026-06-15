@@ -38,7 +38,6 @@ def get_urls_with_refreshing(urls):
         return []
     n = len(urls)
     start_index = max(0, n - 20)
-    
     current_index = start_index - 1
     while current_index >= 0:
         if urls[current_index].get('refresh_status') == REFRESH_STATUS_REFRESHING:
@@ -46,7 +45,8 @@ def get_urls_with_refreshing(urls):
         else:
             break
     final_start_index = current_index + 1
-    return urls[final_start_index:]
+    # return list of indices to uniquely identify records in the original urls list
+    return list(range(final_start_index, n))
 
 @app.route('/')
 def index():
@@ -63,7 +63,9 @@ def index():
     }
     provider_credentials_json = json.dumps(credentials, ensure_ascii=False)
     urls = load_urls()
-    latest_urls = get_urls_with_refreshing(urls) if isinstance(urls, list) else []
+    indices = get_urls_with_refreshing(urls) if isinstance(urls, list) else []
+    # build latest_urls with original index for unique identification; show newest first
+    latest_urls = [dict(urls[i], **{'_idx': i}) for i in reversed(indices)] if indices else []
     return render_template('index.html', user=user, domains=domains, credentials=credentials, credential_lookup=credential_lookup, provider_labels=PROVIDER_LABELS, provider_credentials_json=provider_credentials_json, users=users, all_usernames=all_usernames, latest_urls=latest_urls)
 
 @app.route('/login', methods=['GET', 'POST'])

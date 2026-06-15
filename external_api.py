@@ -46,7 +46,19 @@ def api_task_status():
         })
 
     urls = load_urls()
-    target = next((u for u in urls if u.get('url') == url), None)
+    # support identifying a specific URL record by index to disambiguate duplicate URLs
+    url_idx = request.args.get('url_idx')
+    if url_idx is not None:
+        try:
+            idx = int(url_idx)
+        except (ValueError, TypeError):
+            return jsonify({"success": False, "error": "url_idx 格式不正确"}), 400
+        if idx < 0 or idx >= len(urls):
+            return jsonify({"success": False, "error": "url_idx 超出范围"}), 404
+        target = urls[idx]
+    else:
+        target = next((u for u in urls if u.get('url') == url), None)
+
     if not target:
         return jsonify({"success": False, "error": "URL 记录不存在"}), 404
 
