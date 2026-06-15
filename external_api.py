@@ -24,8 +24,8 @@ def verify_external_signature(url, timestamp, signature):
 @external_bp.route('/api/task_status', methods=['GET'])
 def api_task_status():
     domain = request.args.get('domain')
-    url = request.args.get('url')
-    if not domain and not url:
+    url_idx = request.args.get('url_idx')
+    if not domain and not url_idx:
         return jsonify({"success": False, "error": "domain 或 url 参数必填"}), 400
 
     if domain:
@@ -47,7 +47,6 @@ def api_task_status():
 
     urls = load_urls()
     # support identifying a specific URL record by index to disambiguate duplicate URLs
-    url_idx = request.args.get('url_idx')
     if url_idx is not None:
         try:
             idx = int(url_idx)
