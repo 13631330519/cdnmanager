@@ -1,10 +1,9 @@
 import json
-import os
 import threading
 import time
 from datetime import datetime
 from flask import Blueprint, jsonify, request, session
-from common import DOMAIN_FILE, DATA_DIR, VALID_PROVIDERS, REFRESH_STATUS_NONE, REFRESH_STATUS_REFRESHING, REFRESH_STATUS_COMPLETE, REFRESH_STATUS_FAILED, DOMAINS_LOCK,log
+from common import DOMAIN_FILE, VALID_PROVIDERS, REFRESH_STATUS_NONE, REFRESH_STATUS_REFRESHING, REFRESH_STATUS_COMPLETE, REFRESH_STATUS_FAILED, DOMAINS_LOCK,log, safe_save_urls
 from credentials import get_credential
 from providers.akamai import refresh_akamai
 from providers.alicdn import refresh_alicdn, check_alicdn_task
@@ -20,12 +19,18 @@ def load_domains():
         with open(DOMAIN_FILE, 'r', encoding='utf-8') as f:
             return json.load(f)
 
-
-def save_domains(domains):
+def safe_save_domains(function):
     with DOMAINS_LOCK:
+        with open(DOMAIN_FILE, 'r', encoding='utf-8') as f:
+            domains = json.load(f)
+
+        ret,domains = function(domains)
+        if ret is False:
+            return False
+
         with open(DOMAIN_FILE, 'w', encoding='utf-8') as f:
             json.dump(domains, f, indent=2, ensure_ascii=False)
-
+    return True
 
 def user_can_access_domain(username, domain):
     allowed_users = domain.get('allowed_users')
@@ -51,14 +56,12 @@ def parse_allowed_users(raw_value):
     return ['*'] if not allowed_users else sorted(set(allowed_users))
 
 
-def update_domain_record(domain_name, updates):
-    domains = load_domains()
+def update_domain_record(domain_name, updates, domains):
     target = next((d for d in domains if d['domain'] == domain_name), None)
     if not target:
         return False
     target.update(updates)
-    save_domains(domains)
-    return True
+    return True, domains
 
 
 def record_refresh_submission(domain_name, result):
@@ -73,7 +76,7 @@ def record_refresh_submission(domain_name, result):
         'refresh_status': refresh_status if refresh_status is not None else (REFRESH_STATUS_REFRESHING if result.get('success') else REFRESH_STATUS_FAILED),
         'last_refreshed_at': datetime.now().isoformat()
     }
-    return update_domain_record(domain_name, updates)
+    return safe_save_domains(lambda d: update_domain_record(domain_name, updates, d))
 
 
 def map_task_status(status):
@@ -86,9 +89,47 @@ def map_task_status(status):
         return REFRESH_STATUS_FAILED
     return REFRESH_STATUS_REFRESHING
 
+def refresh_pending_url_tasks(urls):
+    for url in urls:
+        if url.get('refresh_status') != REFRESH_STATUS_REFRESHING:
+            continue
+        task_id = url.get('task_id')
+        if not task_id:
+            continue
 
-def refresh_pending_tasks():
-    domains = load_domains()
+        provider = url.get('provider')
+        credential_id = url.get('credential_id')
+        credentials = get_credential(provider, credential_id)
+        if not credentials:
+            url['refresh_status'] = REFRESH_STATUS_FAILED
+            url['refresh_task_status'] = None
+            url['refresh_task_detail'] = {"error": "绑定凭据不存在"}
+            updated = True
+            continue
+
+        if provider == 'alicdn':
+            task_info = check_alicdn_task(task_id, credentials)
+        elif provider == 'tencent':
+            task_info = check_tencent_task(task_id, credentials)
+        elif provider == 'lingzhi':
+            task_info = check_lingzhi_task(url.get('url'), credentials)
+        else:
+            continue
+
+        if task_info.get('success'):
+            task_status = task_info.get('task_status')
+            url['refresh_status'] = map_task_status(task_status)
+            url['refresh_task_detail'] = task_info.get('status_detail')
+            if url['refresh_status'] == REFRESH_STATUS_COMPLETE:
+                url['completed_at'] = datetime.now().isoformat()
+            updated = True
+        else:
+            url['refresh_status'] = REFRESH_STATUS_FAILED
+            url['refresh_task_detail'] = {"error": task_info.get('message')}
+            updated = True
+    return updated,urls
+
+def refresh_pending_tasks(domains):
     updated = False
     for domain_record in domains:
         if domain_record.get('refresh_status') != REFRESH_STATUS_REFRESHING:
@@ -112,7 +153,7 @@ def refresh_pending_tasks():
         elif provider == 'tencent':
             task_info = check_tencent_task(task_id, credentials)
         elif provider == 'lingzhi':
-            task_info = check_lingzhi_task(domain_record['domain'], credentials)
+            task_info = check_lingzhi_task(f"https://{domain_record['domain']}/", credentials)
         else:
             continue
 
@@ -128,16 +169,15 @@ def refresh_pending_tasks():
             domain_record['refresh_status'] = REFRESH_STATUS_FAILED
             domain_record['refresh_task_detail'] = {"error": task_info.get('message')}
             updated = True
-
-    if updated:
-        save_domains(domains)
+    return updated,domains
 
 
 def start_task_polling_thread():
     def worker():
         while True:
             try:
-                refresh_pending_tasks()
+                safe_save_domains(refresh_pending_tasks)
+                safe_save_urls(refresh_pending_url_tasks)
             except Exception:
                 pass
             time.sleep(30)
@@ -174,24 +214,28 @@ def add_domain():
     credential = get_credential(provider, credential_id)
     if not credential:
         return jsonify({"error": "请选择有效的凭据"}), 400
-    domains = load_domains()
-    if any(d['domain'] == domain for d in domains):
+
+    def function(domains):
+        if any(d['domain'] == domain for d in domains):
+            return False
+        domains.append({
+            "domain": domain,
+            "domain_name": domain_name,
+            "provider": provider,
+            "credential_id": credential_id,
+            "allowed_users": allowed_users,
+            "added_by": user['username'],
+            "added_at": datetime.now().isoformat(),
+            "refresh_status": REFRESH_STATUS_NONE,
+            "last_refreshed_at": None,
+            "task_id": None,
+            "refresh_task_status": None,
+            "refresh_task_detail": None
+        })
+        return True,domains
+    
+    if not safe_save_domains(function):
         return jsonify({"error": "域名已存在"}), 400
-    domains.append({
-        "domain": domain,
-        "domain_name": domain_name,
-        "provider": provider,
-        "credential_id": credential_id,
-        "allowed_users": allowed_users,
-        "added_by": user['username'],
-        "added_at": datetime.now().isoformat(),
-        "refresh_status": REFRESH_STATUS_NONE,
-        "last_refreshed_at": None,
-        "task_id": None,
-        "refresh_task_status": None,
-        "refresh_task_detail": None
-    })
-    save_domains(domains)
     return jsonify({"success": True, "message": "域名添加成功"})
 
 
@@ -214,20 +258,25 @@ def edit_domain():
     credential = get_credential(provider, credential_id)
     if not credential:
         return jsonify({"error": "请选择有效的凭据"}), 400
-    domains = load_domains()
-    target = next((d for d in domains if d['domain'] == domain), None)
-    if not target:
+
+    def function(domains):
+        target = next((d for d in domains if d['domain'] == domain), None)
+        if not target:
+            return False
+        target['domain_name'] = domain_name
+        target['provider'] = provider
+        target['credential_id'] = credential_id
+        target['allowed_users'] = allowed_users
+        target['task_id'] = None
+        target['refresh_task_status'] = None
+        target['refresh_task_detail'] = None
+        target['refresh_status'] = REFRESH_STATUS_NONE
+        target['last_refreshed_at'] = None
+        return True,domains
+
+    if not safe_save_domains(function):
         return jsonify({"error": "域名不存在"}), 404
-    target['domain_name'] = domain_name
-    target['provider'] = provider
-    target['credential_id'] = credential_id
-    target['allowed_users'] = allowed_users
-    target['task_id'] = None
-    target['refresh_task_status'] = None
-    target['refresh_task_detail'] = None
-    target['refresh_status'] = REFRESH_STATUS_NONE
-    target['last_refreshed_at'] = None
-    save_domains(domains)
+ 
     return jsonify({"success": True, "message": "域名已更新"})
 
 
@@ -293,7 +342,8 @@ def delete_domain():
     if user['role'] != 'admin':
         return jsonify({"error": "无权限删除域名"}), 403
     domain = request.form.get('domain')
-    domains = load_domains()
-    domains = [d for d in domains if d['domain'] != domain]
-    save_domains(domains)
+    
+    safe_save_domains(lambda domains: (True,[d for d in domains if d['domain'] != domain]))
+
+
     return jsonify({"success": True, "message": "域名已删除"})

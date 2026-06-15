@@ -1,6 +1,7 @@
 import hmac
 import hashlib
 from datetime import datetime
+import json
 from urllib.parse import urlparse
 from flask import Blueprint, request, jsonify, current_app
 from credentials import get_credential
@@ -9,10 +10,9 @@ from providers.akamai import refresh_akamai
 from providers.alicdn import refresh_alicdn
 from providers.tencent import refresh_tencentcdn
 from providers.lingzhi import refresh_lingzhi
-from common import REFRESH_STATUS_NONE
+from common import REFRESH_STATUS_NONE,safe_save_urls
 
 external_bp = Blueprint('external_bp', __name__)
-
 
 def verify_external_signature(url, timestamp, signature):
     secret = current_app.config.get('EXTERNAL_API_SECRET', 'cdn_manager_external_secret')
@@ -94,5 +94,15 @@ def api_refresh_url():
         result = refresh_akamai(domain_record['domain'], credential, url=url)
     else:
         return jsonify({"success": False, "error": "不支持的提供商"}), 400
+    
+    safe_save_urls(lambda urls: (True,urls + [{
+        "url": url,
+        "provider": provider,
+        "credential_id": credential_id,
+        "submitted_at": datetime.now().isoformat(),
+        "completed_at": None,
+        "task_id": result.get('task_id'),
+        "refresh_status": result.get('task_status')
+    }]))
 
     return jsonify(result)

@@ -51,13 +51,13 @@ def refresh_lingzhi(domain, credentials, url=None):
     except Exception as e:
         return {"success": False, "message": f"灵知刷新请求异常: {e}", "provider": "lingzhi"}
 
-def check_lingzhi_task(domain, credentials):
+def check_lingzhi_task(url, credentials):
 
     user_id = credentials.get('access_key')
     api_key = credentials.get('secret_key')
     root = {
         
-            "url":f"https://{domain}/",
+            "url": url,
             "tc": int(datetime.now().timestamp())
         }
     

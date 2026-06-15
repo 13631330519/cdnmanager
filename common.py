@@ -7,6 +7,7 @@ DATA_DIR = "data"
 USER_FILE = os.path.join(DATA_DIR, "users.json")
 DOMAIN_FILE = os.path.join(DATA_DIR, "domains.json")
 CREDENTIALS_FILE = os.path.join(DATA_DIR, "provider_credentials.json")
+URL_FILE = os.path.join(DATA_DIR, "urls.json")
 
 LOG_DIR = "logs"
 
@@ -19,6 +20,7 @@ PROVIDER_LABELS = {
 }
 
 DOMAINS_LOCK = threading.Lock()
+URL_LOCK = threading.Lock()
 REFRESH_STATUS_NONE = '--'
 REFRESH_STATUS_REFRESHING = '正在刷新'
 REFRESH_STATUS_COMPLETE = '已完成'
@@ -55,3 +57,21 @@ def log(log_entry):
     logs.append(log_entry)
     with open(log_file, 'w', encoding='utf-8') as f:
         json.dump(logs, f, indent=2, ensure_ascii=False)
+
+
+def load_urls():
+    with URL_LOCK:
+        with open(URL_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+
+def safe_save_urls(function):
+    with URL_LOCK:
+        with open(URL_FILE, 'r', encoding='utf-8') as f:
+            urls = json.load(f)
+
+        ret,urls = function(urls)
+        if not ret:
+            return False
+
+        with open(URL_FILE, 'w', encoding='utf-8') as f:
+            json.dump(urls, f, indent=2, ensure_ascii=False)

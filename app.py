@@ -7,7 +7,7 @@ from werkzeug.security import check_password_hash
 from common import ensure_data_files, VALID_PROVIDERS, PROVIDER_LABELS
 from config import SECRET_KEY, EXTERNAL_API_SECRET, APP_PORT, PERMANENT_SESSION_LIFETIME
 from credentials import load_credentials, credential_bp
-from domains import get_visible_domains, load_domains, domain_bp, start_task_polling_thread
+from domains import get_visible_domains, domain_bp, start_task_polling_thread
 from users import load_users, user_bp
 from external_api import external_bp
 
