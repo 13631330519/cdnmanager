@@ -45,6 +45,9 @@ def ensure_data_files():
                 "tencent": [],
                 "lingzhi": []
             }, f, indent=2, ensure_ascii=False)
+    if not os.path.exists(URL_FILE):
+        with open(URL_FILE, 'w', encoding='utf-8') as f:
+            json.dump([], f, indent=2, ensure_ascii=False)
 
 def log(log_entry):
     os.makedirs(DATA_DIR, exist_ok=True)
@@ -61,13 +64,20 @@ def log(log_entry):
 
 def load_urls():
     with URL_LOCK:
+        if not os.path.exists(URL_FILE):
+            with open(URL_FILE, 'w', encoding='utf-8') as f:
+                json.dump([], f, indent=2, ensure_ascii=False)
+            return []
         with open(URL_FILE, 'r', encoding='utf-8') as f:
             return json.load(f)
 
 def safe_save_urls(function):
     with URL_LOCK:
-        with open(URL_FILE, 'r', encoding='utf-8') as f:
-            urls = json.load(f)
+        if not os.path.exists(URL_FILE):
+            urls = []
+        else:
+            with open(URL_FILE, 'r', encoding='utf-8') as f:
+                urls = json.load(f)
 
         ret,urls = function(urls)
         if not ret:

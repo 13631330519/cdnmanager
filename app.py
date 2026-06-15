@@ -4,7 +4,7 @@ from datetime import datetime
 from flask import Flask, render_template, request, redirect, url_for, session, flash
 from werkzeug.security import check_password_hash
 
-from common import ensure_data_files, VALID_PROVIDERS, PROVIDER_LABELS
+from common import ensure_data_files, VALID_PROVIDERS, PROVIDER_LABELS, load_urls
 from config import SECRET_KEY, EXTERNAL_API_SECRET, APP_PORT, PERMANENT_SESSION_LIFETIME
 from credentials import load_credentials, credential_bp
 from domains import get_visible_domains, domain_bp, start_task_polling_thread
@@ -47,7 +47,9 @@ def index():
         for provider in VALID_PROVIDERS
     }
     provider_credentials_json = json.dumps(credentials, ensure_ascii=False)
-    return render_template('index.html', user=user, domains=domains, credentials=credentials, credential_lookup=credential_lookup, provider_labels=PROVIDER_LABELS, provider_credentials_json=provider_credentials_json, users=users, all_usernames=all_usernames)
+    urls = load_urls()
+    latest_urls = list(reversed(urls[-20:])) if isinstance(urls, list) else []
+    return render_template('index.html', user=user, domains=domains, credentials=credentials, credential_lookup=credential_lookup, provider_labels=PROVIDER_LABELS, provider_credentials_json=provider_credentials_json, users=users, all_usernames=all_usernames, latest_urls=latest_urls)
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
