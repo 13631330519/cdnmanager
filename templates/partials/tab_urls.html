@@ -1,0 +1,31 @@
+<div id="tab-urls" class="tab-panel hidden">
+    <div class="bg-white rounded-lg shadow-md p-6">
+        <h2 class="text-xl font-semibold mb-4 text-gray-800">最近 20 条 URL 记录</h2>
+        {% if latest_urls %}
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead>
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">URL</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">提供商</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">状态</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">提交时间</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200">
+                    {% for url in latest_urls %}
+                    <tr class="hover:bg-gray-50 transition" data-url="{{ url.url or url.get('url') }}" data-url-idx="{{ url._idx }}">
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ url.url or url.get('url') or '-' }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ url.provider or '-' }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 url-refresh-status-cell">{{ url.refresh_status or url.get('refresh_status') or '-' }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 url-time-cell">{{ url.completed_at or url.get('completed_at') or url.submitted_at or url.get('submitted_at') or '-' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-gray-500 text-center py-8">暂无 URL 记录。</p>
+        {% endif %}
+    </div>
+</div>

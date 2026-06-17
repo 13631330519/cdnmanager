@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}CDN管理器{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    {% block head %}{% endblock %}
+</head>
+<body class="bg-gray-50 min-h-screen flex flex-col">
+    <header class="bg-indigo-700 text-white shadow-lg">
+        <div class="container mx-auto px-6 py-4 flex justify-between items-center">
+            <h1 class="text-2xl font-bold flex items-center">
+                <i class="fas fa-cloud-upload-alt mr-2"></i> CDN管理器
+            </h1>
+            <div class="flex items-center space-x-4">
+                <span class="text-sm">欢迎, <strong>{{ user.username }}</strong></span>
+                <a href="{{ url_for('logout') }}" class="bg-red-600 hover:bg-red-700 px-3 py-1 rounded text-sm transition">退出</a>
+            </div>
+        </div>
+    </header>
+
+    <nav class="bg-white border-b border-gray-200 shadow-sm">
+        <div class="container mx-auto px-6">
+            <div class="flex space-x-1 overflow-x-auto" role="tablist">
+                <button type="button" class="tab-btn px-5 py-3 text-sm font-medium border-b-2 transition whitespace-nowrap" data-tab="domains" role="tab">
+                    <i class="fas fa-globe mr-1"></i>域名管理
+                </button>
+                <button type="button" class="tab-btn px-5 py-3 text-sm font-medium border-b-2 transition whitespace-nowrap" data-tab="urls" role="tab">
+                    <i class="fas fa-history mr-1"></i>刷新记录
+                </button>
+                {% if user.role == 'admin' %}
+                <button type="button" class="tab-btn px-5 py-3 text-sm font-medium border-b-2 transition whitespace-nowrap" data-tab="credentials" role="tab">
+                    <i class="fas fa-key mr-1"></i>凭据管理
+                </button>
+                <button type="button" class="tab-btn px-5 py-3 text-sm font-medium border-b-2 transition whitespace-nowrap" data-tab="users" role="tab">
+                    <i class="fas fa-users mr-1"></i>用户管理
+                </button>
+                {% endif %}
+            </div>
+        </div>
+    </nav>
+
+    <main class="container mx-auto px-6 py-8 flex-grow">
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="bg-gray-800 text-white text-center py-6 mt-auto">
+        <p class="text-sm">CDN管理器 v1.0 | 2026 © 本地部署 · 无数据库 · 支持阿里云/腾讯云/灵知</p>
+    </footer>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>
