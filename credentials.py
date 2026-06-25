@@ -1,23 +1,9 @@
-import json
 from datetime import datetime
 from flask import Blueprint, jsonify, request, session
-from common import CREDENTIALS_FILE, VALID_PROVIDERS
-from users import load_users
+from common import VALID_PROVIDERS
+from models import load_credentials, upsert_credential, delete_credential, load_users
 
 credential_bp = Blueprint('credential_bp', __name__)
-
-
-def load_credentials():
-    with open(CREDENTIALS_FILE, 'r', encoding='utf-8') as f:
-        data = json.load(f)
-    for provider in VALID_PROVIDERS:
-        data.setdefault(provider, [])
-    return data
-
-
-def save_credentials(credentials):
-    with open(CREDENTIALS_FILE, 'w', encoding='utf-8') as f:
-        json.dump(credentials, f, indent=2, ensure_ascii=False)
 
 
 def get_credential(provider, credential_id):
@@ -43,27 +29,17 @@ def save_credential_route():
         return jsonify({"error": "不支持的提供商"}), 400
     if not credential_id or not credential_name or not access_key or not secret_key:
         return jsonify({"error": "凭据ID、名称、AccessKey 和 SecretKey 都不能为空"}), 400
-    credentials = load_credentials()
-    provider_list = credentials.setdefault(provider, [])
-    existing = next((c for c in provider_list if c.get('id') == credential_id), None)
-    if existing:
-        existing.update({
-            "name": credential_name,
-            "access_key": access_key,
-            "secret_key": secret_key,
-            "updated_at": datetime.now().isoformat()
-        })
-        message = "凭据已更新"
-    else:
-        provider_list.append({
-            "id": credential_id,
-            "name": credential_name,
-            "access_key": access_key,
-            "secret_key": secret_key,
-            "created_at": datetime.now().isoformat()
-        })
-        message = "凭据已添加"
-    save_credentials(credentials)
+
+
+    message = "凭据已更新" if get_credential(provider, credential_id) else "凭据已添加"
+    upsert_credential(provider, {
+        'id': credential_id,
+        'name': credential_name,
+        'access_key': access_key,
+        'secret_key': secret_key,
+        'updated_at': datetime.now().isoformat() if get_credential(provider, credential_id) else None,
+        'created_at': datetime.now().isoformat() if not get_credential(provider, credential_id) else get_credential(provider, credential_id).get('created_at')
+    })
     return jsonify({"success": True, "message": message})
 
 
@@ -78,7 +54,6 @@ def delete_credential_route():
     credential_id = request.form.get('credential_id', '').strip()
     if provider not in VALID_PROVIDERS or not credential_id:
         return jsonify({"error": "参数非法"}), 400
-    credentials = load_credentials()
-    credentials[provider] = [c for c in credentials.get(provider, []) if c.get('id') != credential_id]
-    save_credentials(credentials)
+
+    delete_credential(provider, credential_id)
     return jsonify({"success": True, "message": "凭据已删除"})

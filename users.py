@@ -1,41 +1,9 @@
-import json
 from datetime import datetime
 from flask import Blueprint, jsonify, request, session
 from werkzeug.security import generate_password_hash
-from common import USER_FILE, DOMAIN_FILE, DOMAINS_LOCK
+from models import load_users, upsert_user, delete_user, get_user, remove_user_from_domains
 
 user_bp = Blueprint('user_bp', __name__)
-
-
-def load_users():
-    with open(USER_FILE, 'r', encoding='utf-8') as f:
-        return json.load(f)
-
-
-def save_users(users):
-    with open(USER_FILE, 'w', encoding='utf-8') as f:
-        json.dump(users, f, indent=2, ensure_ascii=False)
-
-
-def get_user(username):
-    return next((u for u in load_users() if u['username'] == username), None)
-
-
-def remove_user_from_domains(username):
-    with DOMAINS_LOCK:
-        with open(DOMAIN_FILE, 'r', encoding='utf-8') as f:
-            domains = json.load(f)
-
-        updated = False
-        for domain in domains:
-            allowed_users = domain.get('allowed_users')
-            if isinstance(allowed_users, list) and username in allowed_users:
-                domain['allowed_users'] = [u for u in allowed_users if u != username]
-                updated = True
-
-        if updated:
-            with open(DOMAIN_FILE, 'w', encoding='utf-8') as f:
-                json.dump(domains, f, indent=2, ensure_ascii=False)
 
 
 @user_bp.route('/save_user', methods=['POST'])
@@ -54,26 +22,20 @@ def save_user_route():
     if role not in ['admin', 'user']:
         role = 'user'
 
-    users = load_users()
-    existing = next((u for u in users if u['username'] == username), None)
-    if existing:
-        existing['role'] = role
-        if password:
-            existing['password'] = generate_password_hash(password)
-        existing['updated_at'] = datetime.now().isoformat()
-        message = "用户已更新"
-    else:
-        if not password:
-            return jsonify({"error": "新用户必须设置密码"}), 400
-        users.append({
-            "username": username,
-            "password": generate_password_hash(password),
-            "role": role,
-            "created_at": datetime.now().isoformat()
-        })
-        message = "用户已添加"
+    existing = get_user(username)
+    if not existing and not password:
+        return jsonify({"error": "新用户必须设置密码"}), 400
+    message = "用户已更新" if existing else "用户已添加"
 
-    save_users(users)
+
+    # apply single upsert
+    upsert_user({
+        'username': username,
+        'password': generate_password_hash(password) if password else (get_user(username) or {}).get('password'),
+        'role': role,
+        'created_at': datetime.now().isoformat() if not get_user(username) else (get_user(username) or {}).get('created_at'),
+        'updated_at': datetime.now().isoformat()
+    })
     return jsonify({"success": True, "message": message})
 
 
@@ -96,7 +58,7 @@ def delete_user_route():
     users = load_users()
     if not any(u['username'] == username for u in users):
         return jsonify({"error": "用户不存在"}), 404
-    users = [u for u in users if u['username'] != username]
-    save_users(users)
+
+    delete_user(username)
     remove_user_from_domains(username)
     return jsonify({"success": True, "message": "用户已删除"})

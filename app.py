@@ -1,15 +1,15 @@
-﻿import os
-import json
+﻿import json
 from datetime import datetime
 from flask import Flask, render_template, request, redirect, url_for, session, flash
 from werkzeug.security import check_password_hash
 
-from common import REFRESH_STATUS_REFRESHING, ensure_data_files, VALID_PROVIDERS, PROVIDER_LABELS, load_urls
-from config import SECRET_KEY, EXTERNAL_API_SECRET, APP_PORT, PERMANENT_SESSION_LIFETIME
-from credentials import load_credentials, credential_bp
+from common import REFRESH_STATUS_REFRESHING, VALID_PROVIDERS, PROVIDER_LABELS
+from config import SECRET_KEY, EXTERNAL_API_SECRET, APP_PORT, PERMANENT_SESSION_LIFETIME, ENABLE_TASK_POLLING
+from credentials import credential_bp
 from domains import get_visible_domains, domain_bp, start_task_polling_thread
-from users import load_users, user_bp
 from external_api import external_bp
+from models import ensure_database, load_urls, load_users, load_credentials
+from users import user_bp
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = SECRET_KEY
@@ -24,14 +24,15 @@ def datetimeformat(value, format='%Y-%m-%d %H:%M:%S'):
         value = datetime.fromisoformat(value)
     return value.strftime(format)
 
-ensure_data_files()
+ensure_database()
 
 app.register_blueprint(domain_bp)
 app.register_blueprint(credential_bp)
 app.register_blueprint(user_bp)
 app.register_blueprint(external_bp)
 
-start_task_polling_thread()
+if ENABLE_TASK_POLLING:
+    start_task_polling_thread()
 
 def get_urls_with_refreshing(urls):
     if not urls:
@@ -64,8 +65,7 @@ def index():
     provider_credentials_json = json.dumps(credentials, ensure_ascii=False)
     urls = load_urls()
     indices = get_urls_with_refreshing(urls) if isinstance(urls, list) else []
-    # build latest_urls with original index for unique identification; show newest first
-    latest_urls = [dict(urls[i], **{'_idx': i}) for i in reversed(indices)] if indices else []
+    latest_urls = [dict(urls[i], _idx=urls[i]['id']) for i in reversed(indices)] if indices else []
     return render_template('index.html', user=user, domains=domains, credentials=credentials, credential_lookup=credential_lookup, provider_labels=PROVIDER_LABELS, provider_credentials_json=provider_credentials_json, users=users, all_usernames=all_usernames, latest_urls=latest_urls)
 
 @app.route('/login', methods=['GET', 'POST'])

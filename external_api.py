@@ -1,16 +1,16 @@
 import hmac
 import hashlib
 from datetime import datetime
-import json
 from urllib.parse import urlparse
 from flask import Blueprint, request, jsonify, current_app
 from credentials import get_credential
-from domains import load_domains, find_bound_domain, record_refresh_submission
+from domains import find_bound_domain, record_refresh_submission
 from providers.akamai import refresh_akamai
 from providers.alicdn import refresh_alicdn
 from providers.tencent import refresh_tencentcdn
 from providers.lingzhi import refresh_lingzhi
-from common import REFRESH_STATUS_COMPLETE, REFRESH_STATUS_FAILED, REFRESH_STATUS_NONE, REFRESH_STATUS_REFRESHING, safe_save_urls, load_urls
+from common import REFRESH_STATUS_COMPLETE, REFRESH_STATUS_FAILED, REFRESH_STATUS_NONE, REFRESH_STATUS_REFRESHING
+from models import insert_url, get_domain, get_url_by_id, load_urls
 
 external_bp = Blueprint('external_bp', __name__)
 
@@ -26,11 +26,10 @@ def api_task_status():
     domain = request.args.get('domain')
     url_idx = request.args.get('url_idx')
     if not domain and not url_idx:
-        return jsonify({"success": False, "error": "domain 或 url 参数必填"}), 400
+        return jsonify({"success": False, "error": "domain 或 url_idx 参数必填"}), 400
 
     if domain:
-        domains = load_domains()
-        target = next((d for d in domains if d['domain'] == domain), None)
+        target = get_domain(domain)
         if not target:
             return jsonify({"success": False, "error": "域名不存在"}), 404
 
@@ -45,18 +44,17 @@ def api_task_status():
             "status_detail": target.get('refresh_task_detail')
         })
 
-    urls = load_urls()
-    # support identifying a specific URL record by index to disambiguate duplicate URLs
     if url_idx is not None:
         try:
-            idx = int(url_idx)
+            url_id = int(url_idx)
         except (ValueError, TypeError):
             return jsonify({"success": False, "error": "url_idx 格式不正确"}), 400
-        if idx < 0 or idx >= len(urls):
-            return jsonify({"success": False, "error": "url_idx 超出范围"}), 404
-        target = urls[idx]
+        target = get_url_by_id(url_id)
     else:
-        target = next((u for u in urls if u.get('url') == url), None)
+        url = request.args.get('url')
+        if not url:
+            return jsonify({"success": False, "error": "url 或 url_idx 必填"}), 400
+        target = next((u for u in load_urls() if u.get('url') == url), None)
 
     if not target:
         return jsonify({"success": False, "error": "URL 记录不存在"}), 404
@@ -69,7 +67,7 @@ def api_task_status():
         "submitted_at": target.get('submitted_at'),
         "completed_at": target.get('completed_at'),
         "task_id": target.get('task_id'),
-        "status_detail": target.get('status_detail')
+        "status_detail": target.get('refresh_task_detail')
     })
 
 
@@ -123,11 +121,11 @@ def api_refresh_url():
         result = refresh_akamai(domain_record['domain'], credential, url=url)
     else:
         return jsonify({"success": False, "error": "不支持的提供商"}), 400
-    
+
     refresh_status = result.get('refresh_status')
     if result.get('success') and not result.get('task_id'):
         refresh_status = REFRESH_STATUS_COMPLETE
-    safe_save_urls(lambda urls: (True,urls + [{
+    insert_url({
         "url": url,
         "provider": provider,
         "credential_id": credential_id,
@@ -135,6 +133,6 @@ def api_refresh_url():
         "completed_at": None,
         "task_id": result.get('task_id'),
         "refresh_status": refresh_status if refresh_status is not None else (REFRESH_STATUS_REFRESHING if result.get('success') else REFRESH_STATUS_FAILED)
-    }]))
+    })
 
     return jsonify(result)
