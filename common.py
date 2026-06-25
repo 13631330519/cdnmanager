@@ -1,4 +1,5 @@
 import os
+import json
 
 DATA_DIR = os.environ.get('DATA_DIR', 'data')
 DATABASE_FILE = os.environ.get('DATABASE_FILE', os.path.join(DATA_DIR, 'cdn_manager.db'))
