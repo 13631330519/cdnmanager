@@ -132,7 +132,8 @@ def api_refresh_url():
         "submitted_at": datetime.now().isoformat(),
         "completed_at": None,
         "task_id": result.get('task_id'),
-        "refresh_status": refresh_status if refresh_status is not None else (REFRESH_STATUS_REFRESHING if result.get('success') else REFRESH_STATUS_FAILED)
+        "refresh_status": refresh_status if refresh_status is not None else (REFRESH_STATUS_REFRESHING if result.get('success') else REFRESH_STATUS_FAILED),
+        "refresh_task_detail": result.get('refresh_task_detail'),
     })
 
     return jsonify(result)

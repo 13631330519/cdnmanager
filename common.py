@@ -18,6 +18,27 @@ PROVIDER_LABELS = {
     'akamai': 'Akamai CDN',
 }
 
+CREDENTIAL_FIELD_LABELS = {
+    'alicdn': [
+        {'name': 'access_key', 'label': 'AccessKey', 'type': 'text', 'placeholder': 'AccessKey'},
+        {'name': 'secret_key', 'label': 'SecretKey', 'type': 'password', 'placeholder': 'SecretKey'},
+    ],
+    'tencent': [
+        {'name': 'access_key', 'label': 'SecretId', 'type': 'text', 'placeholder': 'SecretId'},
+        {'name': 'secret_key', 'label': 'SecretKey', 'type': 'password', 'placeholder': 'SecretKey'},
+    ],
+    'lingzhi': [
+        {'name': 'access_key', 'label': 'AccessKey', 'type': 'text', 'placeholder': 'AccessKey'},
+        {'name': 'secret_key', 'label': 'SecretKey', 'type': 'password', 'placeholder': 'SecretKey'},
+    ],
+    'akamai': [
+        {'name': 'extra_key', 'label': 'Client Token', 'type': 'text', 'placeholder': 'Client Token'},
+        {'name': 'secret_key', 'label': 'Client Secret', 'type': 'password', 'placeholder': 'Client Secret'},
+        {'name': 'access_key', 'label': 'Access Token', 'type': 'text', 'placeholder': 'Access Token'},
+        {'name': 'extra_secret', 'label': 'API Host', 'type': 'text', 'placeholder': 'https://akab-xxx.luna.akamaiapis.net'},
+    ],
+}
+
 REFRESH_STATUS_NONE = '--'
 REFRESH_STATUS_REFRESHING = '正在刷新'
 REFRESH_STATUS_COMPLETE = '已完成'

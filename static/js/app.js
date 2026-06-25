@@ -47,6 +47,29 @@ const addCredentialSelect = document.getElementById('addCredentialSelect');
 function updateAddCredentialOptions() {
     if (!addProviderSelect || !addCredentialSelect) return;
     addCredentialSelect.innerHTML = buildCredentialOptions(addProviderSelect.value, '');
+    toggleAddCpcodeField();
+}
+
+function toggleAddCpcodeField() {
+    const cpcodeInput = document.getElementById('addCpcodeInput');
+    if (!cpcodeInput || !addProviderSelect) return;
+    const isAkamai = addProviderSelect.value === 'akamai';
+    cpcodeInput.classList.toggle('hidden', !isAkamai);
+    cpcodeInput.required = isAkamai;
+    if (!isAkamai) cpcodeInput.value = '';
+}
+
+function toggleEditCpcodeField(form) {
+    const providerSelect = form.querySelector('[name="provider"]');
+    const cpcodeField = form.querySelector('.domain-cpcode-field');
+    if (!providerSelect || !cpcodeField) return;
+    const isAkamai = providerSelect.value === 'akamai';
+    cpcodeField.classList.toggle('hidden', !isAkamai);
+    const cpcodeInput = cpcodeField.querySelector('[name="cpcode"]');
+    if (cpcodeInput) {
+        cpcodeInput.required = isAkamai;
+        if (!isAkamai) cpcodeInput.value = '';
+    }
 }
 
 if (addProviderSelect && addCredentialSelect) {
@@ -57,18 +80,13 @@ if (addProviderSelect && addCredentialSelect) {
 document.querySelectorAll('.save-credential-form').forEach(form => {
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const provider = form.dataset.provider;
-        const credentialId = form.querySelector('[name="credential_id"]').value;
-        const credentialName = form.querySelector('[name="credential_name"]').value;
-        const accessKey = form.querySelector('[name="access_key"]').value;
-        const secretKey = form.querySelector('[name="secret_key"]').value;
         const resultDiv = form.querySelector('.credential-result');
         resultDiv.classList.add('hidden');
         resultDiv.textContent = '';
 
         const response = await fetch('/save_credential', {
             method: 'POST',
-            body: new URLSearchParams({ provider, credential_id: credentialId, credential_name: credentialName, access_key: accessKey, secret_key: secretKey })
+            body: new URLSearchParams(new FormData(form))
         });
         const data = await response.json();
         resultDiv.textContent = data.success ? data.message : data.error;
@@ -173,8 +191,12 @@ document.querySelectorAll('.domain-edit-form').forEach(form => {
         credentialSelect.innerHTML = buildCredentialOptions(providerSelect.value, selectedId);
     }
 
-    providerSelect.addEventListener('change', () => updateDomainCredentialOptions(''));
+    providerSelect.addEventListener('change', () => {
+        updateDomainCredentialOptions('');
+        toggleEditCpcodeField(form);
+    });
     updateDomainCredentialOptions(credentialSelect.value);
+    toggleEditCpcodeField(form);
 
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -185,15 +207,21 @@ document.querySelectorAll('.domain-edit-form').forEach(form => {
         resultDiv.classList.add('hidden');
         resultDiv.textContent = '';
 
+        const params = {
+            domain,
+            domain_name: form.querySelector('[name="domain_name"]').value,
+            provider,
+            credential_id: credentialId,
+            allowed_users: form.querySelector('[name="allowed_users"]').value,
+        };
+        const cpcodeInput = form.querySelector('[name="cpcode"]');
+        if (cpcodeInput && provider === 'akamai') {
+            params.cpcode = cpcodeInput.value;
+        }
+
         const response = await fetch('/edit_domain', {
             method: 'POST',
-            body: new URLSearchParams({
-                domain,
-                domain_name: form.querySelector('[name="domain_name"]').value,
-                provider,
-                credential_id: credentialId,
-                allowed_users: form.querySelector('[name="allowed_users"]').value
-            })
+            body: new URLSearchParams(params)
         });
         const data = await response.json();
         if (data.success) {

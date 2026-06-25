@@ -3,7 +3,7 @@ from datetime import datetime
 from flask import Flask, render_template, request, redirect, url_for, session, flash
 from werkzeug.security import check_password_hash
 
-from common import REFRESH_STATUS_REFRESHING, VALID_PROVIDERS, PROVIDER_LABELS
+from common import REFRESH_STATUS_REFRESHING, VALID_PROVIDERS, PROVIDER_LABELS, CREDENTIAL_FIELD_LABELS
 from config import SECRET_KEY, EXTERNAL_API_SECRET, APP_PORT, PERMANENT_SESSION_LIFETIME, ENABLE_TASK_POLLING
 from credentials import credential_bp
 from domains import get_visible_domains, domain_bp, start_task_polling_thread
@@ -66,7 +66,7 @@ def index():
     urls = load_urls()
     indices = get_urls_with_refreshing(urls) if isinstance(urls, list) else []
     latest_urls = [dict(urls[i], _idx=urls[i]['id']) for i in reversed(indices)] if indices else []
-    return render_template('index.html', user=user, domains=domains, credentials=credentials, credential_lookup=credential_lookup, provider_labels=PROVIDER_LABELS, provider_credentials_json=provider_credentials_json, users=users, all_usernames=all_usernames, latest_urls=latest_urls)
+    return render_template('index.html', user=user, domains=domains, credentials=credentials, credential_lookup=credential_lookup, provider_labels=PROVIDER_LABELS, credential_field_labels=CREDENTIAL_FIELD_LABELS, provider_credentials_json=provider_credentials_json, users=users, all_usernames=all_usernames, latest_urls=latest_urls)
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():

@@ -113,6 +113,18 @@ def run_write(work):
     return _retry_on_locked(run)
 
 
+def _ensure_column(conn, table, column, coltype):
+    columns = {row['name'] for row in conn.execute(f'PRAGMA table_info({table})').fetchall()}
+    if column not in columns:
+        conn.execute(f'ALTER TABLE {table} ADD COLUMN {column} {coltype}')
+
+
+def migrate_schema(conn):
+    _ensure_column(conn, 'domains', 'cpcode', 'TEXT')
+    _ensure_column(conn, 'provider_credentials', 'extra_key', 'TEXT')
+    _ensure_column(conn, 'provider_credentials', 'extra_secret', 'TEXT')
+
+
 def ensure_database():
     os.makedirs(DATA_DIR, exist_ok=True)
     initialize_database()
@@ -192,6 +204,7 @@ def initialize_database():
             )
             '''
         )
+        migrate_schema(conn)
 
     run_write(work)
 
@@ -260,7 +273,10 @@ def get_user(username):
 
 def load_credentials():
     rows = query_all(
-        'SELECT provider, id, name, access_key, secret_key, created_at, updated_at FROM provider_credentials ORDER BY provider, id'
+        '''
+        SELECT provider, id, name, access_key, secret_key, extra_key, extra_secret, created_at, updated_at
+        FROM provider_credentials ORDER BY provider, id
+        '''
     )
     data = {provider: [] for provider in VALID_PROVIDERS}
     for row in rows:
@@ -271,7 +287,7 @@ def load_credentials():
 def load_domains():
     return query_all(
         '''
-        SELECT domain, domain_name, provider, credential_id, allowed_users, added_by, added_at,
+        SELECT domain, domain_name, provider, credential_id, cpcode, allowed_users, added_by, added_at,
                refresh_status, last_refreshed_at, task_id, refresh_task_status, refresh_task_detail
         FROM domains ORDER BY domain
         '''
@@ -290,7 +306,7 @@ def load_urls():
 def load_refreshing_domains():
     return query_all(
         '''
-        SELECT domain, domain_name, provider, credential_id, allowed_users, added_by, added_at,
+        SELECT domain, domain_name, provider, credential_id, cpcode, allowed_users, added_by, added_at,
                refresh_status, last_refreshed_at, task_id, refresh_task_status, refresh_task_detail
         FROM domains
         WHERE refresh_status = ? AND task_id IS NOT NULL
@@ -387,8 +403,8 @@ def upsert_credential(provider, item):
         conn.execute(
             '''
             INSERT OR REPLACE INTO provider_credentials
-            (provider, id, name, access_key, secret_key, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            (provider, id, name, access_key, secret_key, extra_key, extra_secret, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''',
             (
                 provider,
@@ -396,6 +412,8 @@ def upsert_credential(provider, item):
                 item.get('name'),
                 item.get('access_key'),
                 item.get('secret_key'),
+                item.get('extra_key'),
+                item.get('extra_secret'),
                 item.get('created_at'),
                 item.get('updated_at'),
             ),
@@ -417,7 +435,7 @@ def delete_credential(provider, credential_id):
 def get_domain(domain):
     return query_one(
         '''
-        SELECT domain, domain_name, provider, credential_id, allowed_users, added_by, added_at,
+        SELECT domain, domain_name, provider, credential_id, cpcode, allowed_users, added_by, added_at,
                refresh_status, last_refreshed_at, task_id, refresh_task_status, refresh_task_detail
         FROM domains WHERE domain = ?
         ''',
@@ -430,15 +448,16 @@ def upsert_domain(domain):
         conn.execute(
             '''
             INSERT OR REPLACE INTO domains
-            (domain, domain_name, provider, credential_id, allowed_users, added_by, added_at,
+            (domain, domain_name, provider, credential_id, cpcode, allowed_users, added_by, added_at,
              refresh_status, last_refreshed_at, task_id, refresh_task_status, refresh_task_detail)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''',
             (
                 domain.get('domain'),
                 domain.get('domain_name'),
                 domain.get('provider'),
                 domain.get('credential_id'),
+                domain.get('cpcode'),
                 json.dumps(domain.get('allowed_users', []), ensure_ascii=False),
                 domain.get('added_by'),
                 domain.get('added_at'),

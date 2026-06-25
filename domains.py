@@ -19,7 +19,7 @@ from models import (
     load_refreshing_urls,
     try_acquire_polling_lease,
 )
-from providers.akamai import refresh_akamai
+from providers.akamai import refresh_akamai, check_akamai_refresh
 from providers.alicdn import refresh_alicdn, check_alicdn_task
 from providers.tencent import refresh_tencentcdn, check_tencent_task
 from providers.lingzhi import check_lingzhi_task, refresh_lingzhi
@@ -57,8 +57,8 @@ def record_refresh_submission(domain_name, result):
 
     updates = {
         'task_id': result.get('task_id'),
-        'refresh_task_status': None,
-        'refresh_task_detail': None,
+        'refresh_task_status': result.get('refresh_task_status'),
+        'refresh_task_detail': result.get('refresh_task_detail'),
         'refresh_status': refresh_status if refresh_status is not None else (REFRESH_STATUS_REFRESHING if result.get('success') else REFRESH_STATUS_FAILED),
         'last_refreshed_at': datetime.now().isoformat()
     }
@@ -100,6 +100,8 @@ def refresh_pending_url_tasks(urls):
             task_info = check_tencent_task(task_id, credentials)
         elif provider == 'lingzhi':
             task_info = check_lingzhi_task(url.get('url'), credentials)
+        elif provider == 'akamai':
+            task_info = check_akamai_refresh(url.get('refresh_task_detail'))
         else:
             continue
 
@@ -141,6 +143,8 @@ def refresh_pending_tasks(domains):
             task_info = check_tencent_task(task_id, credentials)
         elif provider == 'lingzhi':
             task_info = check_lingzhi_task(f"https://{domain_record['domain']}/", credentials)
+        elif provider == 'akamai':
+            task_info = check_akamai_refresh(domain_record.get('refresh_task_detail'))
         else:
             continue
 
@@ -243,8 +247,11 @@ def add_domain():
     provider = request.form.get('provider')
     credential_id = request.form.get('credential_id')
     allowed_users = parse_allowed_users(request.form.get('allowed_users', '').strip())
+    cpcode = request.form.get('cpcode', '').strip() or None
     if not domain or not domain_name or not provider or not credential_id:
         return jsonify({"error": "域名、域名名称、提供商和凭据ID必填"}), 400
+    if provider == 'akamai' and not cpcode:
+        return jsonify({"error": "Akamai 域名必须填写 CP Code"}), 400
     if provider not in VALID_PROVIDERS:
         return jsonify({"error": "不支持的CDN提供商"}), 400
     credential = get_credential(provider, credential_id)
@@ -260,6 +267,7 @@ def add_domain():
         "domain_name": domain_name,
         "provider": provider,
         "credential_id": credential_id,
+        "cpcode": cpcode,
         "allowed_users": allowed_users,
         "added_by": user['username'],
         "added_at": datetime.now().isoformat(),
@@ -284,8 +292,11 @@ def edit_domain():
     provider = request.form.get('provider')
     credential_id = request.form.get('credential_id')
     allowed_users = parse_allowed_users(request.form.get('allowed_users', '').strip())
+    cpcode = request.form.get('cpcode', '').strip() or None
     if not domain or not domain_name or not provider or not credential_id:
         return jsonify({"error": "域名、域名名称、提供商和凭据ID必填"}), 400
+    if provider == 'akamai' and not cpcode:
+        return jsonify({"error": "Akamai 域名必须填写 CP Code"}), 400
     if provider not in VALID_PROVIDERS:
         return jsonify({"error": "不支持的CDN提供商"}), 400
     credential = get_credential(provider, credential_id)
@@ -300,6 +311,7 @@ def edit_domain():
         'domain_name': domain_name,
         'provider': provider,
         'credential_id': credential_id,
+        'cpcode': cpcode if provider == 'akamai' else None,
         'allowed_users': allowed_users,
         'added_by': existing.get('added_by'),
         'added_at': existing.get('added_at'),
@@ -353,7 +365,7 @@ def refresh_domain():
         elif provider == "lingzhi":
             result = refresh_lingzhi(domain, credential)
         elif provider == "akamai":
-            result = refresh_akamai(domain, credential)
+            result = refresh_akamai(domain, credential, cpcode=target.get('cpcode'))
         else:
             return jsonify({"error": "不支持的提供商"}), 400
     except Exception as exc:
