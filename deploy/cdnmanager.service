@@ -1,0 +1,23 @@
+[Unit]
+Description=CDN Manager
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cdnmanager
+Group=cdnmanager
+WorkingDirectory=/opt/cdnmanager
+EnvironmentFile=/etc/cdnmanager/cdnmanager.env
+ExecStart=/opt/cdnmanager/venv/bin/gunicorn -c gunicorn.conf.py wsgi:application
+Restart=on-failure
+RestartSec=5
+KillMode=mixed
+TimeoutStopSec=30
+
+# 安全加固（监听 80 端口时通常不需要 CAP_NET_BIND，见 env 中 GUNICORN_BIND=127.0.0.1:8080 + Nginx）
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
