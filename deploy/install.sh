@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# 若被 sh 调用则自动切换到 bash（Ubuntu 默认 sh 为 dash，不支持 pipefail）
+if [ -z "${BASH_VERSION:-}" ]; then
+  exec bash "$0" "$@"
+fi
 set -euo pipefail
 
 # CDN Manager Linux 部署脚本
@@ -17,7 +21,12 @@ if [[ "${EUID}" -ne 0 ]]; then
 fi
 
 if ! command -v python3 >/dev/null 2>&1; then
-  echo "未找到 python3，请先安装: apt install python3 python3-venv python3-pip"
+  echo "未找到 python3，请先安装: apt install python3 python3-venv python3-pip rsync"
+  exit 1
+fi
+
+if ! command -v rsync >/dev/null 2>&1; then
+  echo "未找到 rsync，请先安装: apt install rsync"
   exit 1
 fi
 

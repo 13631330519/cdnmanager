@@ -1,7 +1,7 @@
 from datetime import datetime
 from flask import Blueprint, jsonify, request, session
 from common import VALID_PROVIDERS, CREDENTIAL_FIELD_LABELS
-from models import load_credentials, upsert_credential, delete_credential, load_users, get_credential
+from models import load_credentials, upsert_credential, delete_credential, load_users
 
 credential_bp = Blueprint('credential_bp', __name__)
 
