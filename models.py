@@ -295,13 +295,21 @@ def load_domains():
 
 
 def load_urls():
-    return query_all(
+    urls = query_all(
         '''
         SELECT id, url, provider, credential_id, submitted_at, completed_at, task_id, refresh_status, refresh_task_detail
         FROM urls ORDER BY id
         '''
     )
+    #只保留近200-300条记录，防止数据库过大
+    if len(urls) >= 300:
+        id = urls[100]['id']
+        urls = urls[100:]
+        def work(conn):
+            conn.execute('DELETE FROM urls WHERE id <?', (id,))
+        run_write(work)
 
+    return urls
 
 def load_refreshing_domains():
     return query_all(

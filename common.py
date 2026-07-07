@@ -54,6 +54,7 @@ def log(log_entry):
     else:
         logs = []
     logs.append(log_entry)
+    logs = logs[-80:]
     with open(log_file, 'w', encoding='utf-8') as f:
         json.dump(logs, f, indent=2, ensure_ascii=False)
 
