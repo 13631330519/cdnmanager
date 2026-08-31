@@ -3,7 +3,7 @@ import threading
 import time
 from datetime import datetime
 from flask import Blueprint, jsonify, request, session
-from common import VALID_PROVIDERS, REFRESH_STATUS_NONE, REFRESH_STATUS_REFRESHING, REFRESH_STATUS_COMPLETE, REFRESH_STATUS_FAILED, log
+from common import VALID_PROVIDERS, REFRESH_STATUS_NONE, REFRESH_STATUS_REFRESHING, REFRESH_STATUS_COMPLETE, REFRESH_STATUS_FAILED, CDN_CNAME_SUFFIXES, log
 from credentials import get_credential
 from models import (
     load_domains,
@@ -23,6 +23,7 @@ from providers.akamai import refresh_akamai, check_akamai_refresh
 from providers.alicdn import refresh_alicdn, check_alicdn_task
 from providers.tencent import refresh_tencentcdn, check_tencent_task
 from providers.lingzhi import check_lingzhi_task, refresh_lingzhi
+from providers.cdn_dns_sync import sync_cdn_cname
 
 domain_bp = Blueprint('domain_bp', __name__)
 
@@ -306,6 +307,7 @@ def edit_domain():
     existing = get_domain(domain)
     if not existing:
         return jsonify({"error": "域名不存在"}), 404
+    provider_changed = existing.get('provider') != provider
     upsert_domain({
         'domain': domain,
         'domain_name': domain_name,
@@ -322,7 +324,18 @@ def edit_domain():
         'last_refreshed_at': None
     })
 
-    return jsonify({"success": True, "message": "域名已更新"})
+    response = {"success": True, "message": "域名已更新"}
+    if provider_changed and provider in CDN_CNAME_SUFFIXES:
+        dns_result = sync_cdn_cname(domain, provider)
+        response['dns_sync'] = dns_result
+        if dns_result.get('success') and not dns_result.get('skipped'):
+            response['message'] = f"域名已更新，DNS CNAME 已同步为 {dns_result.get('new_value')}"
+        elif dns_result.get('success') and dns_result.get('skipped'):
+            response['message'] = f"域名已更新（{dns_result.get('message')}）"
+        else:
+            response['message'] = f"域名已更新，但 DNS CNAME 同步失败：{dns_result.get('message')}"
+
+    return jsonify(response)
 
 
 @domain_bp.route('/refresh_domain', methods=['POST'])

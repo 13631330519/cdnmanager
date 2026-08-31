@@ -63,6 +63,13 @@ REFRESH_STATUS_REFRESHING = '正在刷新'
 REFRESH_STATUS_COMPLETE = '已完成'
 REFRESH_STATUS_FAILED = '刷新失败'
 
+# CDN 提供商对应的 DNS CNAME 后缀（不含末尾点）
+CDN_CNAME_SUFFIXES = {
+    'lingzhi': 'xmdqkj.cn',
+    'tencent': 'cdn.dnsv1.com',
+}
+KNOWN_CDN_CNAME_SUFFIXES = list(CDN_CNAME_SUFFIXES.values())
+
 
 def log(log_entry):
     os.makedirs(DATA_DIR, exist_ok=True)
