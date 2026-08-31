@@ -3,7 +3,7 @@ import threading
 import time
 from datetime import datetime
 from flask import Blueprint, jsonify, request, session
-from common import VALID_PROVIDERS, REFRESH_STATUS_NONE, REFRESH_STATUS_REFRESHING, REFRESH_STATUS_COMPLETE, REFRESH_STATUS_FAILED, CDN_CNAME_SUFFIXES, log
+from common import VALID_PROVIDERS, REFRESH_STATUS_NONE, REFRESH_STATUS_REFRESHING, REFRESH_STATUS_COMPLETE, REFRESH_STATUS_FAILED, CDN_CNAME_SUFFIXES, can_edit_domain_provider, can_manage_all_domains, log
 from credentials import get_credential
 from models import (
     load_domains,
@@ -39,7 +39,7 @@ def user_can_access_domain(username, domain):
 
 
 def get_visible_domains(username, role):
-    if role == 'admin':
+    if can_manage_all_domains(role):
         return load_domains()
     return [d for d in load_domains() if user_can_access_domain(username, d)]
 
@@ -286,13 +286,22 @@ def edit_domain():
     if 'username' not in session:
         return jsonify({"error": "未登录"}), 401
     user = next((u for u in load_users() if u['username'] == session['username']), None)
-    if user['role'] != 'admin':
+    if not can_edit_domain_provider(user.get('role')):
         return jsonify({"error": "无权限修改域名"}), 403
     domain = request.form.get('domain')
-    domain_name = request.form.get('domain_name', '').strip()
+    existing = get_domain(domain)
+    if not existing:
+        return jsonify({"error": "域名不存在"}), 404
+
+    if user.get('role') == 'domain_admin':
+        domain_name = existing.get('domain_name', '').strip()
+        allowed_users = existing.get('allowed_users') or ['*']
+    else:
+        domain_name = request.form.get('domain_name', '').strip()
+        allowed_users = parse_allowed_users(request.form.get('allowed_users', '').strip())
+
     provider = request.form.get('provider')
     credential_id = request.form.get('credential_id')
-    allowed_users = parse_allowed_users(request.form.get('allowed_users', '').strip())
     cpcode = request.form.get('cpcode', '').strip() or None
     if not domain or not domain_name or not provider or not credential_id:
         return jsonify({"error": "域名、域名名称、提供商和凭据ID必填"}), 400
@@ -304,9 +313,6 @@ def edit_domain():
     if not credential:
         return jsonify({"error": "请选择有效的凭据"}), 400
 
-    existing = get_domain(domain)
-    if not existing:
-        return jsonify({"error": "域名不存在"}), 404
     provider_changed = existing.get('provider') != provider
     upsert_domain({
         'domain': domain,
@@ -352,7 +358,7 @@ def refresh_domain():
     user = next((u for u in load_users() if u['username'] == session['username']), None)
     if not user:
         return jsonify({"error": "未登录"}), 401
-    if user.get('role') != 'admin' and not user_can_access_domain(user['username'], target):
+    if not can_manage_all_domains(user.get('role')) and not user_can_access_domain(user['username'], target):
         return jsonify({"error": "无权限刷新该域名"}), 403
     provider = target.get('provider')
     if provider not in VALID_PROVIDERS:

@@ -207,13 +207,17 @@ document.querySelectorAll('.domain-edit-form').forEach(form => {
         resultDiv.classList.add('hidden');
         resultDiv.textContent = '';
 
+        const domainNameInput = form.querySelector('[name="domain_name"]');
+        const allowedUsersInput = form.querySelector('[name="allowed_users"]');
         const params = {
             domain,
-            domain_name: form.querySelector('[name="domain_name"]').value,
+            domain_name: domainNameInput ? domainNameInput.value : '',
             provider,
             credential_id: credentialId,
-            allowed_users: form.querySelector('[name="allowed_users"]').value,
         };
+        if (allowedUsersInput) {
+            params.allowed_users = allowedUsersInput.value;
+        }
         const cpcodeInput = form.querySelector('[name="cpcode"]');
         if (cpcodeInput && provider === 'akamai') {
             params.cpcode = cpcodeInput.value;

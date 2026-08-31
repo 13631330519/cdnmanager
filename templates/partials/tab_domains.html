@@ -4,6 +4,8 @@
             <i class="fas fa-user-shield mr-2"></i>
             {% if user.role == 'admin' %}
                 您是管理员，拥有域名管理与刷新权限。
+            {% elif user.role == 'domain_admin' %}
+                您是域名管理员，可修改 CDN 提供商并刷新域名。
             {% else %}
                 您是普通用户，仅可刷新已添加的域名。
             {% endif %}
@@ -83,26 +85,32 @@
                             <button class="refresh-btn bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm transition" data-domain="{{ domain.domain }}" data-provider="{{ domain.provider }}">
                                 <i class="fas fa-sync-alt mr-1"></i>刷新
                             </button>
-                            {% if user.role == 'admin' %}
+                            {% if user.role == 'admin' or user.role == 'domain_admin' %}
                             <button class="edit-domain-btn bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-1 rounded text-sm transition ml-2" data-domain="{{ domain.domain }}">
-                                <i class="fas fa-edit mr-1"></i>修改
+                                <i class="fas fa-edit mr-1"></i>{% if user.role == 'domain_admin' %}改提供商{% else %}修改{% endif %}
                             </button>
+                            {% endif %}
+                            {% if user.role == 'admin' %}
                             <button class="delete-btn bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm transition ml-2" data-domain="{{ domain.domain }}">
                                 <i class="fas fa-trash-alt mr-1"></i>删除
                             </button>
                             {% endif %}
                         </td>
                     </tr>
-                    {% if user.role == 'admin' %}
+                    {% if user.role == 'admin' or user.role == 'domain_admin' %}
                     <tr class="edit-row hidden bg-gray-50">
                         <td colspan="11" class="px-6 py-4">
                             <form class="domain-edit-form grid gap-4 md:grid-cols-4 items-end" data-domain="{{ domain.domain }}">
+                                {% if user.role == 'admin' %}
                                 <div>
                                     <label class="block text-xs font-medium text-gray-500 mb-1">域名名称</label>
                                     <input name="domain_name" type="text" value="{{ domain.domain_name or '' }}" class="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-indigo-500" required>
                                 </div>
+                                {% else %}
+                                <input type="hidden" name="domain_name" value="{{ domain.domain_name or '' }}">
+                                {% endif %}
                                 <div>
-                                    <label class="block text-xs font-medium text-gray-500 mb-1">服务商</label>
+                                    <label class="block text-xs font-medium text-gray-500 mb-1">CDN 提供商</label>
                                     <select name="provider" class="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-indigo-500" required>
                                         <option value="alicdn" {% if domain.provider == 'alicdn' %}selected{% endif %}>阿里云CDN</option>
                                         <option value="tencent" {% if domain.provider == 'tencent' %}selected{% endif %}>腾讯云CDN</option>
@@ -110,10 +118,12 @@
                                         <option value="akamai" {% if domain.provider == 'akamai' %}selected{% endif %}>AkamaiCDN</option>
                                     </select>
                                 </div>
+                                {% if user.role == 'admin' %}
                                 <div>
                                     <label class="block text-xs font-medium text-gray-500 mb-1">允许用户</label>
                                     <input name="allowed_users" type="text" value="{% if domain.allowed_users is defined and '*' not in domain.allowed_users %}{{ domain.allowed_users | join(', ') }}{% endif %}" placeholder="用户名逗号分隔，留空表示所有用户" class="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-indigo-500" />
                                 </div>
+                                {% endif %}
                                 <div class="domain-cpcode-field {% if domain.provider != 'akamai' %}hidden{% endif %}">
                                     <label class="block text-xs font-medium text-gray-500 mb-1">CP Code</label>
                                     <input name="cpcode" type="text" value="{{ domain.cpcode or '' }}" placeholder="Akamai CP Code" class="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-indigo-500">

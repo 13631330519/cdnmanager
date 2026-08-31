@@ -1,6 +1,8 @@
 from datetime import datetime
 from flask import Blueprint, jsonify, request, session
 from werkzeug.security import generate_password_hash
+
+from common import USER_ROLES
 from models import load_users, upsert_user, delete_user, get_user, remove_user_from_domains
 
 user_bp = Blueprint('user_bp', __name__)
@@ -19,8 +21,8 @@ def save_user_route():
     role = request.form.get('role', 'user').strip()
     if not username:
         return jsonify({"error": "用户名不能为空"}), 400
-    if role not in ['admin', 'user']:
-        role = 'user'
+    if role not in USER_ROLES:
+        return jsonify({"error": "无效的角色"}), 400
 
     existing = get_user(username)
     if not existing and not password:

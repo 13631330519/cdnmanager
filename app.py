@@ -3,7 +3,7 @@ from datetime import datetime
 from flask import Flask, render_template, request, redirect, url_for, session, flash
 from werkzeug.security import check_password_hash
 
-from common import REFRESH_STATUS_REFRESHING, VALID_PROVIDERS, PROVIDER_LABELS, CREDENTIAL_FIELD_LABELS, DNS_PROVIDER_LABELS, DNS_CREDENTIAL_FIELD_LABELS
+from common import REFRESH_STATUS_REFRESHING, VALID_PROVIDERS, PROVIDER_LABELS, CREDENTIAL_FIELD_LABELS, DNS_PROVIDER_LABELS, DNS_CREDENTIAL_FIELD_LABELS, USER_ROLE_LABELS
 from config import SECRET_KEY, EXTERNAL_API_SECRET, APP_PORT, PERMANENT_SESSION_LIFETIME, ENABLE_TASK_POLLING
 from credentials import credential_bp
 from dns_credentials import dns_credential_bp
@@ -95,6 +95,7 @@ def index():
         users=users,
         all_usernames=all_usernames,
         latest_urls=latest_urls,
+        user_role_labels=USER_ROLE_LABELS,
     )
 
 @app.route('/login', methods=['GET', 'POST'])

@@ -12,6 +12,24 @@ LOG_DIR = os.environ.get('LOG_DIR', 'logs')
 
 VALID_PROVIDERS = ['alicdn', 'tencent', 'lingzhi', 'akamai']
 DNS_PROVIDERS = ['aliyun', 'tencent']
+USER_ROLES = ['admin', 'domain_admin', 'user']
+USER_ROLE_LABELS = {
+    'admin': '管理员',
+    'domain_admin': '域名管理员',
+    'user': '普通用户',
+}
+
+
+def is_admin_role(role):
+    return role == 'admin'
+
+
+def can_edit_domain_provider(role):
+    return role in ('admin', 'domain_admin')
+
+
+def can_manage_all_domains(role):
+    return role in ('admin', 'domain_admin')
 PROVIDER_LABELS = {
     'alicdn': '阿里云CDN',
     'tencent': '腾讯云CDN',
