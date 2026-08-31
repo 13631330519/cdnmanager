@@ -1,0 +1,134 @@
+<div id="tab-root-domains" class="tab-panel hidden">
+    <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+        <h2 class="text-xl font-semibold mb-4 text-gray-800">添加主域名</h2>
+        <form id="addRootDomainForm" class="flex flex-col lg:flex-row gap-4 flex-wrap">
+            <input type="text" name="domain" placeholder="一级域名（如 example.com）" class="flex-grow px-4 py-2 border rounded focus:ring-2 focus:ring-indigo-500" required>
+            <input type="text" name="domain_name" placeholder="域名名称" class="flex-grow px-4 py-2 border rounded focus:ring-2 focus:ring-indigo-500" required>
+            <select id="addDnsProviderSelect" name="dns_provider" class="px-4 py-2 border rounded focus:ring-2 focus:ring-indigo-500" required>
+                <option value="">DNS 服务商</option>
+                <option value="aliyun">阿里云 DNS</option>
+                <option value="tencent">腾讯云 DNSPod</option>
+            </select>
+            <select id="addDnsCredentialSelect" name="dns_credential_id" class="px-4 py-2 border rounded focus:ring-2 focus:ring-indigo-500" required>
+                <option value="">请选择 DNS 凭据</option>
+            </select>
+            <button type="submit" class="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded transition font-medium">添加主域名</button>
+        </form>
+        <div id="addRootDomainResult" class="mt-3 text-sm hidden"></div>
+    </div>
+
+    <div class="bg-white rounded-lg shadow-md p-6">
+        <h2 class="text-xl font-semibold mb-4 text-gray-800">主域名列表</h2>
+        {% if root_domains %}
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead>
+                    <tr>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">主域名</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">名称</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">DNS 服务商</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">DNS 凭据</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">添加人</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">操作</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200">
+                    {% for item in root_domains %}
+                    <tr class="hover:bg-gray-50">
+                        <td class="px-4 py-3 text-sm font-medium text-gray-900">{{ item.domain }}</td>
+                        <td class="px-4 py-3 text-sm text-gray-500">{{ item.domain_name }}</td>
+                        <td class="px-4 py-3 text-sm text-gray-500">{{ dns_provider_labels[item.dns_provider] }}</td>
+                        <td class="px-4 py-3 text-sm text-gray-500">
+                            {% set cred = dns_credential_lookup[item.dns_provider].get(item.dns_credential_id) %}
+                            {{ cred.name if cred else item.dns_credential_id }}
+                        </td>
+                        <td class="px-4 py-3 text-sm text-gray-500">{{ item.added_by or '-' }}</td>
+                        <td class="px-4 py-3 text-sm whitespace-nowrap">
+                            <button type="button" class="view-dns-records-btn bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm" data-domain="{{ item.domain }}">解析记录</button>
+                            <button type="button" class="edit-root-domain-btn bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-1 rounded text-sm ml-2" data-domain="{{ item.domain }}">修改</button>
+                            <button type="button" class="delete-root-domain-btn bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm ml-2" data-domain="{{ item.domain }}">删除</button>
+                        </td>
+                    </tr>
+                    <tr class="dns-records-row hidden bg-gray-50" data-domain="{{ item.domain }}">
+                        <td colspan="6" class="px-4 py-4">
+                            <div class="dns-records-panel space-y-4" data-domain="{{ item.domain }}">
+                                <div class="flex flex-wrap gap-3 items-end">
+                                    <div>
+                                        <label class="block text-xs text-gray-500 mb-1">主机记录</label>
+                                        <input type="text" class="dns-filter-sub w-40 px-3 py-2 border rounded text-sm" placeholder="如 www">
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs text-gray-500 mb-1">记录类型</label>
+                                        <select class="dns-filter-type px-3 py-2 border rounded text-sm">
+                                            <option value="">全部</option>
+                                            <option value="A">A</option>
+                                            <option value="CNAME">CNAME</option>
+                                            <option value="TXT">TXT</option>
+                                            <option value="MX">MX</option>
+                                        </select>
+                                    </div>
+                                    <button type="button" class="load-dns-records-btn bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded text-sm">查询记录</button>
+                                </div>
+                                <div class="dns-records-result text-sm text-gray-500">点击「查询记录」加载解析列表</div>
+                                <div class="border-t pt-4">
+                                    <h4 class="text-sm font-semibold text-gray-700 mb-2">新增/修改记录</h4>
+                                    <form class="dns-record-form grid gap-3 md:grid-cols-3">
+                                        <input type="hidden" name="record_id">
+                                        <input type="text" name="sub_domain" placeholder="主机记录（如 www）" class="px-3 py-2 border rounded text-sm" required>
+                                        <select name="record_type" class="px-3 py-2 border rounded text-sm" required>
+                                            <option value="A">A</option>
+                                            <option value="CNAME">CNAME</option>
+                                            <option value="TXT">TXT</option>
+                                            <option value="MX">MX</option>
+                                        </select>
+                                        <input type="text" name="value" placeholder="记录值" class="px-3 py-2 border rounded text-sm" required>
+                                        <input type="number" name="ttl" placeholder="TTL（默认600）" class="px-3 py-2 border rounded text-sm">
+                                        <input type="text" name="line" placeholder="线路（默认）" class="px-3 py-2 border rounded text-sm">
+                                        <div class="space-x-2">
+                                            <button type="submit" class="save-dns-record-btn bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded text-sm">保存记录</button>
+                                            <button type="button" class="reset-dns-record-form-btn bg-gray-300 hover:bg-gray-400 text-gray-800 px-4 py-2 rounded text-sm">清空</button>
+                                        </div>
+                                    </form>
+                                    <div class="dns-record-form-result mt-2 text-sm hidden"></div>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                    <tr class="root-edit-row hidden bg-gray-50" data-domain="{{ item.domain }}">
+                        <td colspan="6" class="px-4 py-4">
+                            <form class="root-domain-edit-form grid gap-4 md:grid-cols-4 items-end" data-domain="{{ item.domain }}">
+                                <div>
+                                    <label class="block text-xs text-gray-500 mb-1">名称</label>
+                                    <input name="domain_name" type="text" value="{{ item.domain_name }}" class="w-full px-3 py-2 border rounded" required>
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-500 mb-1">DNS 服务商</label>
+                                    <select name="dns_provider" class="w-full px-3 py-2 border rounded root-dns-provider-select" required>
+                                        <option value="aliyun" {% if item.dns_provider == 'aliyun' %}selected{% endif %}>阿里云 DNS</option>
+                                        <option value="tencent" {% if item.dns_provider == 'tencent' %}selected{% endif %}>腾讯云 DNSPod</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-500 mb-1">DNS 凭据</label>
+                                    <select name="dns_credential_id" class="w-full px-3 py-2 border rounded root-dns-credential-select" required>
+                                        {% for cred in dns_credentials[item.dns_provider] %}
+                                        <option value="{{ cred.id }}" {% if cred.id == item.dns_credential_id %}selected{% endif %}>{{ cred.name }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="space-x-2">
+                                    <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded text-sm">保存</button>
+                                    <button type="button" class="cancel-root-edit-btn bg-gray-300 hover:bg-gray-400 text-gray-800 px-4 py-2 rounded text-sm">取消</button>
+                                </div>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-gray-500 text-center py-8">暂无主域名，请先添加。</p>
+        {% endif %}
+    </div>
+</div>

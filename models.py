@@ -15,6 +15,7 @@ from common import (
     CREDENTIALS_FILE,
     URL_FILE,
     VALID_PROVIDERS,
+    DNS_PROVIDERS,
     REFRESH_STATUS_REFRESHING,
 )
 
@@ -201,6 +202,33 @@ def initialize_database():
                 holder_id TEXT NOT NULL,
                 acquired_at TEXT NOT NULL,
                 expires_at TEXT NOT NULL
+            )
+            '''
+        )
+        conn.execute(
+            '''
+            CREATE TABLE IF NOT EXISTS dns_credentials (
+                provider TEXT NOT NULL,
+                id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                access_key TEXT NOT NULL,
+                secret_key TEXT NOT NULL,
+                created_at TEXT,
+                updated_at TEXT,
+                PRIMARY KEY (provider, id)
+            )
+            '''
+        )
+        conn.execute(
+            '''
+            CREATE TABLE IF NOT EXISTS root_domains (
+                domain TEXT PRIMARY KEY,
+                domain_name TEXT NOT NULL,
+                dns_provider TEXT NOT NULL,
+                dns_credential_id TEXT NOT NULL,
+                added_by TEXT,
+                added_at TEXT,
+                updated_at TEXT
             )
             '''
         )
@@ -591,3 +619,106 @@ def get_url_by_id(url_id):
         ''',
         (url_id,),
     )
+
+
+def load_dns_credentials():
+    rows = query_all(
+        '''
+        SELECT provider, id, name, access_key, secret_key, created_at, updated_at
+        FROM dns_credentials ORDER BY provider, id
+        '''
+    )
+    data = {provider: [] for provider in DNS_PROVIDERS}
+    for row in rows:
+        data.setdefault(row['provider'], []).append(row)
+    return data
+
+
+def get_dns_credential(provider, credential_id):
+    return query_one(
+        '''
+        SELECT provider, id, name, access_key, secret_key, created_at, updated_at
+        FROM dns_credentials WHERE provider = ? AND id = ?
+        ''',
+        (provider, credential_id),
+    )
+
+
+def upsert_dns_credential(provider, item):
+    def work(conn):
+        conn.execute(
+            '''
+            INSERT OR REPLACE INTO dns_credentials
+            (provider, id, name, access_key, secret_key, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''',
+            (
+                provider,
+                item.get('id'),
+                item.get('name'),
+                item.get('access_key'),
+                item.get('secret_key'),
+                item.get('created_at'),
+                item.get('updated_at'),
+            ),
+        )
+
+    run_write(work)
+
+
+def delete_dns_credential(provider, credential_id):
+    def work(conn):
+        conn.execute(
+            'DELETE FROM dns_credentials WHERE provider = ? AND id = ?',
+            (provider, credential_id),
+        )
+
+    run_write(work)
+
+
+def load_root_domains():
+    return query_all(
+        '''
+        SELECT domain, domain_name, dns_provider, dns_credential_id, added_by, added_at, updated_at
+        FROM root_domains ORDER BY domain
+        '''
+    )
+
+
+def get_root_domain(domain):
+    return query_one(
+        '''
+        SELECT domain, domain_name, dns_provider, dns_credential_id, added_by, added_at, updated_at
+        FROM root_domains WHERE domain = ?
+        ''',
+        (domain,),
+    )
+
+
+def upsert_root_domain(item):
+    def work(conn):
+        conn.execute(
+            '''
+            INSERT OR REPLACE INTO root_domains
+            (domain, domain_name, dns_provider, dns_credential_id, added_by, added_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''',
+            (
+                item.get('domain'),
+                item.get('domain_name'),
+                item.get('dns_provider'),
+                item.get('dns_credential_id'),
+                item.get('added_by'),
+                item.get('added_at'),
+                item.get('updated_at'),
+            ),
+        )
+
+    run_write(work)
+
+
+def delete_root_domain(domain):
+    def work(conn):
+        conn.execute('DELETE FROM root_domains WHERE domain = ?', (domain,))
+
+    run_write(work)

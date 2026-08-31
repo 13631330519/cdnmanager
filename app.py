@@ -3,12 +3,14 @@ from datetime import datetime
 from flask import Flask, render_template, request, redirect, url_for, session, flash
 from werkzeug.security import check_password_hash
 
-from common import REFRESH_STATUS_REFRESHING, VALID_PROVIDERS, PROVIDER_LABELS, CREDENTIAL_FIELD_LABELS
+from common import REFRESH_STATUS_REFRESHING, VALID_PROVIDERS, PROVIDER_LABELS, CREDENTIAL_FIELD_LABELS, DNS_PROVIDER_LABELS, DNS_CREDENTIAL_FIELD_LABELS
 from config import SECRET_KEY, EXTERNAL_API_SECRET, APP_PORT, PERMANENT_SESSION_LIFETIME, ENABLE_TASK_POLLING
 from credentials import credential_bp
+from dns_credentials import dns_credential_bp
 from domains import get_visible_domains, domain_bp, start_task_polling_thread
 from external_api import external_bp
-from models import ensure_database, load_urls, load_users, load_credentials
+from models import ensure_database, load_urls, load_users, load_credentials, load_dns_credentials, load_root_domains
+from root_domains import root_domain_bp
 from users import user_bp
 
 app = Flask(__name__)
@@ -28,6 +30,8 @@ ensure_database()
 
 app.register_blueprint(domain_bp)
 app.register_blueprint(credential_bp)
+app.register_blueprint(dns_credential_bp)
+app.register_blueprint(root_domain_bp)
 app.register_blueprint(user_bp)
 app.register_blueprint(external_bp)
 
@@ -57,16 +61,41 @@ def index():
     user = next((u for u in users if u['username'] == session['username']), None)
     domains = get_visible_domains(user['username'], user['role'])
     credentials = load_credentials()
+    dns_credentials = load_dns_credentials()
+    root_domains = load_root_domains() if user['role'] == 'admin' else []
     all_usernames = [u['username'] for u in users]
     credential_lookup = {
         provider: {cred['id']: cred for cred in credentials.get(provider, [])}
         for provider in VALID_PROVIDERS
     }
+    dns_credential_lookup = {
+        provider: {cred['id']: cred for cred in dns_credentials.get(provider, [])}
+        for provider in dns_credentials.keys()
+    }
     provider_credentials_json = json.dumps(credentials, ensure_ascii=False)
+    dns_credentials_json = json.dumps(dns_credentials, ensure_ascii=False)
     urls = load_urls()
     indices = get_urls_with_refreshing(urls) if isinstance(urls, list) else []
     latest_urls = [dict(urls[i], _idx=urls[i]['id']) for i in reversed(indices)] if indices else []
-    return render_template('index.html', user=user, domains=domains, credentials=credentials, credential_lookup=credential_lookup, provider_labels=PROVIDER_LABELS, credential_field_labels=CREDENTIAL_FIELD_LABELS, provider_credentials_json=provider_credentials_json, users=users, all_usernames=all_usernames, latest_urls=latest_urls)
+    return render_template(
+        'index.html',
+        user=user,
+        domains=domains,
+        credentials=credentials,
+        dns_credentials=dns_credentials,
+        root_domains=root_domains,
+        credential_lookup=credential_lookup,
+        dns_credential_lookup=dns_credential_lookup,
+        provider_labels=PROVIDER_LABELS,
+        dns_provider_labels=DNS_PROVIDER_LABELS,
+        credential_field_labels=CREDENTIAL_FIELD_LABELS,
+        dns_credential_field_labels=DNS_CREDENTIAL_FIELD_LABELS,
+        provider_credentials_json=provider_credentials_json,
+        dns_credentials_json=dns_credentials_json,
+        users=users,
+        all_usernames=all_usernames,
+        latest_urls=latest_urls,
+    )
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():

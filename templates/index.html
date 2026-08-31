@@ -7,12 +7,15 @@
     {% include "partials/tab_urls.html" %}
     {% if user.role == 'admin' %}
     {% include "partials/tab_credentials.html" %}
+    {% include "partials/tab_dns_credentials.html" %}
+    {% include "partials/tab_root_domains.html" %}
     {% include "partials/tab_users.html" %}
     {% endif %}
 {% endblock %}
 
 {% block scripts %}
     <script id="provider-credentials" type="application/json">{{ provider_credentials_json | safe }}</script>
+    <script id="dns-credentials" type="application/json">{{ dns_credentials_json | safe }}</script>
     <script src="{{ url_for('static', filename='js/tabs.js') }}"></script>
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 {% endblock %}

@@ -11,12 +11,31 @@ URL_FILE = os.path.join(DATA_DIR, 'urls.json')
 LOG_DIR = os.environ.get('LOG_DIR', 'logs')
 
 VALID_PROVIDERS = ['alicdn', 'tencent', 'lingzhi', 'akamai']
+DNS_PROVIDERS = ['aliyun', 'tencent']
 PROVIDER_LABELS = {
     'alicdn': '阿里云CDN',
     'tencent': '腾讯云CDN',
     'lingzhi': '灵知开放平台',
     'akamai': 'Akamai CDN',
 }
+
+DNS_PROVIDER_LABELS = {
+    'aliyun': '阿里云 DNS',
+    'tencent': '腾讯云 DNSPod',
+}
+
+DNS_CREDENTIAL_FIELD_LABELS = {
+    'aliyun': [
+        {'name': 'access_key', 'label': 'AccessKey ID', 'type': 'text', 'placeholder': 'AccessKey ID'},
+        {'name': 'secret_key', 'label': 'AccessKey Secret', 'type': 'password', 'placeholder': 'AccessKey Secret'},
+    ],
+    'tencent': [
+        {'name': 'access_key', 'label': 'SecretId', 'type': 'text', 'placeholder': 'SecretId'},
+        {'name': 'secret_key', 'label': 'SecretKey', 'type': 'password', 'placeholder': 'SecretKey'},
+    ],
+}
+
+PROVIDER_LABELS_CDN = PROVIDER_LABELS
 
 CREDENTIAL_FIELD_LABELS = {
     'alicdn': [

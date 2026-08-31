@@ -31,6 +31,12 @@
                     <i class="fas fa-history mr-1"></i>刷新记录
                 </button>
                 {% if user.role == 'admin' %}
+                <button type="button" class="tab-btn px-5 py-3 text-sm font-medium border-b-2 transition whitespace-nowrap" data-tab="dns-credentials" role="tab">
+                    <i class="fas fa-server mr-1"></i>DNS 凭据
+                </button>
+                <button type="button" class="tab-btn px-5 py-3 text-sm font-medium border-b-2 transition whitespace-nowrap" data-tab="root-domains" role="tab">
+                    <i class="fas fa-sitemap mr-1"></i>主域名
+                </button>
                 <button type="button" class="tab-btn px-5 py-3 text-sm font-medium border-b-2 transition whitespace-nowrap" data-tab="credentials" role="tab">
                     <i class="fas fa-key mr-1"></i>凭据管理
                 </button>
