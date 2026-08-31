@@ -52,6 +52,13 @@ python3 -m venv "${APP_DIR}/venv"
 "${APP_DIR}/venv/bin/pip" install --upgrade pip
 "${APP_DIR}/venv/bin/pip" install -r "${APP_DIR}/requirements.txt"
 
+echo "==> 校验 Python 依赖"
+"${APP_DIR}/venv/bin/python" - <<'PY'
+from alibabacloud_alidns20150109.client import Client as AlidnsClient
+from Tea.core import TeaCore
+print('DNS SDK OK')
+PY
+
 echo "==> 配置环境变量"
 mkdir -p "${ENV_DIR}"
 if [[ ! -f "${ENV_FILE}" ]]; then
