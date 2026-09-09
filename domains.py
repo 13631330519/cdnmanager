@@ -23,6 +23,7 @@ from providers.akamai import refresh_akamai, check_akamai_refresh
 from providers.alicdn import refresh_alicdn, check_alicdn_task
 from providers.tencent import refresh_tencentcdn, check_tencent_task
 from providers.lingzhi import check_lingzhi_task, refresh_lingzhi
+from providers.ctyun import refresh_ctyun, check_ctyun_task
 from providers.cdn_dns_sync import sync_cdn_cname
 
 domain_bp = Blueprint('domain_bp', __name__)
@@ -70,7 +71,7 @@ def map_task_status(status):
     if not status:
         return REFRESH_STATUS_REFRESHING
     status = status.lower()
-    if status in ['complete', 'success', 'finished', 'done', 'complete']:
+    if status in ['complete', 'completed', 'success', 'finished', 'done']:
         return REFRESH_STATUS_COMPLETE
     if status in ['failed', 'fail', 'error','timeout','canceled']:
         return REFRESH_STATUS_FAILED
@@ -103,6 +104,8 @@ def refresh_pending_url_tasks(urls):
             task_info = check_lingzhi_task(url.get('url'), credentials)
         elif provider == 'akamai':
             task_info = check_akamai_refresh(url.get('refresh_task_detail'))
+        elif provider == 'ctyun':
+            task_info = check_ctyun_task(task_id, credentials)
         else:
             continue
 
@@ -146,6 +149,8 @@ def refresh_pending_tasks(domains):
             task_info = check_lingzhi_task(f"https://{domain_record['domain']}/", credentials)
         elif provider == 'akamai':
             task_info = check_akamai_refresh(domain_record.get('refresh_task_detail'))
+        elif provider == 'ctyun':
+            task_info = check_ctyun_task(task_id, credentials)
         else:
             continue
 
@@ -385,6 +390,8 @@ def refresh_domain():
             result = refresh_lingzhi(domain, credential)
         elif provider == "akamai":
             result = refresh_akamai(domain, credential, cpcode=target.get('cpcode'))
+        elif provider == "ctyun":
+            result = refresh_ctyun(domain, credential)
         else:
             return jsonify({"error": "不支持的提供商"}), 400
     except Exception as exc:

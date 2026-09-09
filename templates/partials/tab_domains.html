@@ -24,6 +24,7 @@
                 <option value="tencent">腾讯云CDN</option>
                 <option value="lingzhi">灵知开放平台</option>
                 <option value="akamai">AkamiCDN</option>
+                <option value="ctyun">天翼云CDN</option>
             </select>
             <select id="addCredentialSelect" name="credential_id" class="px-4 py-2 border rounded focus:ring-2 focus:ring-indigo-500" required>
                 <option value="">请选择凭据</option>
@@ -62,7 +63,7 @@
                         <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ domain.domain }}</td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ domain.domain_name or '-' }}</td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {% if domain.provider == 'alicdn' %}阿里云{% elif domain.provider == 'tencent' %}腾讯云{% elif domain.provider == 'akamai' %}Akamai{% else %}灵知{% endif %}
+                            {% if domain.provider == 'alicdn' %}阿里云{% elif domain.provider == 'tencent' %}腾讯云{% elif domain.provider == 'akamai' %}Akamai{% elif domain.provider == 'ctyun' %}天翼云{% else %}灵知{% endif %}
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ domain.cpcode or '-' }}</td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -116,6 +117,7 @@
                                         <option value="tencent" {% if domain.provider == 'tencent' %}selected{% endif %}>腾讯云CDN</option>
                                         <option value="lingzhi" {% if domain.provider == 'lingzhi' %}selected{% endif %}>灵知开放平台</option>
                                         <option value="akamai" {% if domain.provider == 'akamai' %}selected{% endif %}>AkamaiCDN</option>
+                                        <option value="ctyun" {% if domain.provider == 'ctyun' %}selected{% endif %}>天翼云CDN</option>
                                     </select>
                                 </div>
                                 {% if user.role == 'admin' %}

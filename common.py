@@ -10,7 +10,7 @@ URL_FILE = os.path.join(DATA_DIR, 'urls.json')
 
 LOG_DIR = os.environ.get('LOG_DIR', 'logs')
 
-VALID_PROVIDERS = ['alicdn', 'tencent', 'lingzhi', 'akamai']
+VALID_PROVIDERS = ['alicdn', 'tencent', 'lingzhi', 'akamai', 'ctyun']
 DNS_PROVIDERS = ['aliyun', 'tencent']
 USER_ROLES = ['admin', 'domain_admin', 'user']
 USER_ROLE_LABELS = {
@@ -35,6 +35,7 @@ PROVIDER_LABELS = {
     'tencent': '腾讯云CDN',
     'lingzhi': '灵知开放平台',
     'akamai': 'Akamai CDN',
+    'ctyun': '天翼云CDN',
 }
 
 DNS_PROVIDER_LABELS = {
@@ -73,6 +74,10 @@ CREDENTIAL_FIELD_LABELS = {
         {'name': 'secret_key', 'label': 'Client Secret', 'type': 'password', 'placeholder': 'Client Secret'},
         {'name': 'access_key', 'label': 'Access Token', 'type': 'text', 'placeholder': 'Access Token'},
         {'name': 'extra_secret', 'label': 'API Host', 'type': 'text', 'placeholder': 'https://akab-xxx.luna.akamaiapis.net'},
+    ],
+    'ctyun': [
+        {'name': 'access_key', 'label': 'AccessKey', 'type': 'text', 'placeholder': 'AccessKey（AK）'},
+        {'name': 'secret_key', 'label': 'SecretKey', 'type': 'password', 'placeholder': 'SecretKey（SK）'},
     ],
 }
 
