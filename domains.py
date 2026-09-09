@@ -24,6 +24,7 @@ from providers.alicdn import refresh_alicdn, check_alicdn_task
 from providers.tencent import refresh_tencentcdn, check_tencent_task
 from providers.lingzhi import check_lingzhi_task, refresh_lingzhi
 from providers.ctyun import refresh_ctyun, check_ctyun_task
+from providers.volcengine import refresh_volcengine, check_volcengine_task
 from providers.cdn_dns_sync import sync_cdn_cname
 
 domain_bp = Blueprint('domain_bp', __name__)
@@ -73,8 +74,10 @@ def map_task_status(status):
     status = status.lower()
     if status in ['complete', 'completed', 'success', 'finished', 'done']:
         return REFRESH_STATUS_COMPLETE
-    if status in ['failed', 'fail', 'error','timeout','canceled']:
+    if status in ['failed', 'fail', 'error', 'timeout', 'canceled']:
         return REFRESH_STATUS_FAILED
+    if status in ['running', 'processing', 'process']:
+        return REFRESH_STATUS_REFRESHING
     return REFRESH_STATUS_REFRESHING
 
 def refresh_pending_url_tasks(urls):
@@ -106,6 +109,8 @@ def refresh_pending_url_tasks(urls):
             task_info = check_akamai_refresh(url.get('refresh_task_detail'))
         elif provider == 'ctyun':
             task_info = check_ctyun_task(task_id, credentials)
+        elif provider == 'volcengine':
+            task_info = check_volcengine_task(task_id, credentials, url.get('refresh_task_detail'))
         else:
             continue
 
@@ -151,6 +156,8 @@ def refresh_pending_tasks(domains):
             task_info = check_akamai_refresh(domain_record.get('refresh_task_detail'))
         elif provider == 'ctyun':
             task_info = check_ctyun_task(task_id, credentials)
+        elif provider == 'volcengine':
+            task_info = check_volcengine_task(task_id, credentials, domain_record.get('refresh_task_detail'))
         else:
             continue
 
@@ -392,6 +399,8 @@ def refresh_domain():
             result = refresh_akamai(domain, credential, cpcode=target.get('cpcode'))
         elif provider == "ctyun":
             result = refresh_ctyun(domain, credential)
+        elif provider == "volcengine":
+            result = refresh_volcengine(domain, credential)
         else:
             return jsonify({"error": "不支持的提供商"}), 400
     except Exception as exc:
