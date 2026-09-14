@@ -10,7 +10,7 @@ URL_FILE = os.path.join(DATA_DIR, 'urls.json')
 
 LOG_DIR = os.environ.get('LOG_DIR', 'logs')
 
-VALID_PROVIDERS = ['alicdn', 'tencent', 'lingzhi', 'akamai', 'ctyun', 'volcengine']
+VALID_PROVIDERS = ['alicdn', 'tencent', 'lingzhi', 'akamai', 'ctyun', 'volcengine', 'x7host']
 DNS_PROVIDERS = ['aliyun', 'tencent']
 USER_ROLES = ['admin', 'domain_admin', 'user']
 USER_ROLE_LABELS = {
@@ -37,6 +37,7 @@ PROVIDER_LABELS = {
     'akamai': 'Akamai CDN',
     'ctyun': '天翼云CDN',
     'volcengine': '火山云CDN',
+    'x7host': '小7托管CDN',
 }
 
 DNS_PROVIDER_LABELS = {
@@ -83,6 +84,9 @@ CREDENTIAL_FIELD_LABELS = {
     'volcengine': [
         {'name': 'access_key', 'label': 'AccessKey', 'type': 'text', 'placeholder': 'AccessKey ID'},
         {'name': 'secret_key', 'label': 'SecretKey', 'type': 'password', 'placeholder': 'Secret Access Key'},
+    ],
+    'x7host': [
+        {'name': 'access_key', 'label': 'AppKey', 'type': 'text', 'placeholder': '游戏方 AppKey（最长 32 位）'},
     ],
 }
 

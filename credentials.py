@@ -50,7 +50,7 @@ def save_credential_route():
         'id': credential_id,
         'name': credential_name,
         'access_key': values.get('access_key'),
-        'secret_key': values.get('secret_key'),
+        'secret_key': values.get('secret_key', ''),
         'extra_key': values.get('extra_key'),
         'extra_secret': values.get('extra_secret'),
         'updated_at': datetime.now().isoformat() if existing else None,

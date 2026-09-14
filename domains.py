@@ -25,6 +25,7 @@ from providers.tencent import refresh_tencentcdn, check_tencent_task
 from providers.lingzhi import check_lingzhi_task, refresh_lingzhi
 from providers.ctyun import refresh_ctyun, check_ctyun_task
 from providers.volcengine import refresh_volcengine, check_volcengine_task
+from providers.x7host import refresh_x7host
 from providers.cdn_dns_sync import sync_cdn_cname
 
 domain_bp = Blueprint('domain_bp', __name__)
@@ -401,6 +402,8 @@ def refresh_domain():
             result = refresh_ctyun(domain, credential)
         elif provider == "volcengine":
             result = refresh_volcengine(domain, credential)
+        elif provider == "x7host":
+            result = refresh_x7host(domain, credential)
         else:
             return jsonify({"error": "不支持的提供商"}), 400
     except Exception as exc:

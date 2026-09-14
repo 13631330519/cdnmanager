@@ -11,6 +11,7 @@ from providers.tencent import refresh_tencentcdn
 from providers.lingzhi import refresh_lingzhi
 from providers.ctyun import refresh_ctyun
 from providers.volcengine import refresh_volcengine
+from providers.x7host import refresh_x7host
 from common import REFRESH_STATUS_COMPLETE, REFRESH_STATUS_FAILED, REFRESH_STATUS_NONE, REFRESH_STATUS_REFRESHING
 from models import insert_url, get_domain, get_url_by_id, load_urls
 
@@ -125,6 +126,8 @@ def api_refresh_url():
         result = refresh_ctyun(domain_record['domain'], credential, url=url)
     elif provider == 'volcengine':
         result = refresh_volcengine(domain_record['domain'], credential, url=url)
+    elif provider == 'x7host':
+        result = refresh_x7host(domain_record['domain'], credential, url=url)
     else:
         return jsonify({"success": False, "error": "不支持的提供商"}), 400
 
