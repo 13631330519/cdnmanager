@@ -54,6 +54,13 @@ def parse_allowed_users(raw_value):
     return ['*'] if not allowed_users else sorted(set(allowed_users))
 
 
+def parse_group_tags(raw_value):
+    if not raw_value:
+        return []
+    tags = [tag.strip() for tag in raw_value.split(',') if tag.strip()]
+    return sorted(set(tags))
+
+
 def record_refresh_submission(domain_name, result):
     refresh_status = result.get('refresh_status')
     if result.get('success') and not result.get('task_id'):
@@ -261,6 +268,8 @@ def add_domain():
     provider = request.form.get('provider')
     credential_id = request.form.get('credential_id')
     allowed_users = parse_allowed_users(request.form.get('allowed_users', '').strip())
+    projects = parse_group_tags(request.form.get('projects', '').strip())
+    environments = parse_group_tags(request.form.get('environments', '').strip())
     cpcode = request.form.get('cpcode', '').strip() or None
     if not domain or not domain_name or not provider or not credential_id:
         return jsonify({"error": "域名、域名名称、提供商和凭据ID必填"}), 400
@@ -282,6 +291,8 @@ def add_domain():
         "provider": provider,
         "credential_id": credential_id,
         "cpcode": cpcode,
+        "projects": projects,
+        "environments": environments,
         "allowed_users": allowed_users,
         "added_by": user['username'],
         "added_at": datetime.now().isoformat(),
@@ -313,6 +324,8 @@ def edit_domain():
         domain_name = request.form.get('domain_name', '').strip()
         allowed_users = parse_allowed_users(request.form.get('allowed_users', '').strip())
 
+    projects = parse_group_tags(request.form.get('projects', '').strip())
+    environments = parse_group_tags(request.form.get('environments', '').strip())
     provider = request.form.get('provider')
     credential_id = request.form.get('credential_id')
     cpcode = request.form.get('cpcode', '').strip() or None
@@ -333,6 +346,8 @@ def edit_domain():
         'provider': provider,
         'credential_id': credential_id,
         'cpcode': cpcode if provider == 'akamai' else None,
+        'projects': projects,
+        'environments': environments,
         'allowed_users': allowed_users,
         'added_by': existing.get('added_by'),
         'added_at': existing.get('added_at'),

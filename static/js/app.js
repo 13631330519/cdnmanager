@@ -78,6 +78,24 @@ if (addProviderSelect && addCredentialSelect) {
 }
 
 const DOMAINS_LAYOUT_STORAGE_KEY = 'cdnmanager.domainsLayout';
+const DOMAINS_TABLE_COLSPAN = 13;
+let domainBlocksMaster = null;
+
+function parseDomainTagList(raw) {
+    if (!raw) return [];
+    try {
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
+    } catch (err) {
+        return [];
+    }
+}
+
+function escapeDomainHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
 
 function compareDomainValues(a, b, order) {
     const emptyA = !a;
@@ -104,7 +122,10 @@ function collectDomainBlocks(tbody) {
         blocks.push({
             mainRow: row,
             editRow,
-            domainName: row.dataset.sortDomainName || '',
+            provider: row.dataset.sortProvider || '',
+            providerLabel: row.dataset.providerLabel || row.dataset.sortProvider || '',
+            projects: parseDomainTagList(row.dataset.projects),
+            environments: parseDomainTagList(row.dataset.environments),
             sortValues: {
                 domain_name: row.dataset.sortDomainName || '',
                 domain: row.dataset.sortDomain || '',
@@ -125,102 +146,391 @@ function sortDomainBlocks(blocks, field, order) {
     ));
 }
 
+function ensureDomainBlocksMaster() {
+    const tbody = document.getElementById('domainsTableBody');
+    if (!tbody) return null;
+    if (!domainBlocksMaster) {
+        domainBlocksMaster = collectDomainBlocks(tbody);
+    }
+    return domainBlocksMaster;
+}
+
 function createDomainGroupHeader(label, count) {
     const tr = document.createElement('tr');
     tr.className = 'domain-group-header bg-indigo-50 border-t-2 border-indigo-100';
-    tr.innerHTML = `<td colspan="11" class="px-6 py-2.5 text-sm font-semibold text-indigo-800">
-        <i class="fas fa-folder-open mr-2"></i>${label}
+    tr.innerHTML = `<td colspan="${DOMAINS_TABLE_COLSPAN}" class="px-6 py-2.5 text-sm font-semibold text-indigo-800">
+        <i class="fas fa-folder-open mr-2"></i>${escapeDomainHtml(label)}
         <span class="ml-2 text-xs font-normal text-indigo-600">(${count} 个域名)</span>
     </td>`;
     return tr;
 }
 
-function getDomainGroupLabel(name) {
-    return name ? name : '(未命名)';
+function appendDomainBlockDisplay(fragment, block, clone) {
+    const mainRow = clone ? block.mainRow.cloneNode(true) : block.mainRow;
+    let editRow = null;
+    if (block.editRow) {
+        editRow = clone ? block.editRow.cloneNode(true) : block.editRow;
+    }
+    if (clone) {
+        mainRow.dataset.displayClone = 'true';
+        if (editRow) editRow.dataset.displayClone = 'true';
+    }
+    fragment.appendChild(mainRow);
+    if (editRow) fragment.appendChild(editRow);
+}
+
+function blockMatchesFilters(block, projectFilter, environmentFilter, providerFilter) {
+    if (projectFilter && !block.projects.includes(projectFilter)) return false;
+    if (environmentFilter && !block.environments.includes(environmentFilter)) return false;
+    if (providerFilter && block.provider !== providerFilter) return false;
+    return true;
+}
+
+function getDomainGroupTags(block, groupMode) {
+    if (groupMode === 'provider') {
+        return block.provider ? [block.provider] : [''];
+    }
+    const tags = groupMode === 'project' ? block.projects : block.environments;
+    return tags.length ? tags : [''];
+}
+
+function getDomainGroupLabel(key, groupMode, sampleBlock) {
+    if (groupMode === 'provider') {
+        return sampleBlock?.providerLabel || key || '(未分组)';
+    }
+    return key ? key : '(未分组)';
+}
+
+function populateDomainFilterOptions(blocks) {
+    const projectEl = document.getElementById('domainsFilterProject');
+    const environmentEl = document.getElementById('domainsFilterEnvironment');
+    const providerEl = document.getElementById('domainsFilterProvider');
+    if (!projectEl || !environmentEl || !providerEl) return;
+
+    const projects = new Set();
+    const environments = new Set();
+    const providers = new Map();
+    blocks.forEach((block) => {
+        block.projects.forEach((tag) => projects.add(tag));
+        block.environments.forEach((tag) => environments.add(tag));
+        if (block.provider) {
+            providers.set(block.provider, block.providerLabel || block.provider);
+        }
+    });
+
+    const savedProject = projectEl.value;
+    const savedEnvironment = environmentEl.value;
+    const savedProvider = providerEl.value;
+
+    projectEl.innerHTML = '<option value="">全部</option>';
+    [...projects].sort((a, b) => compareDomainValues(a, b, 'asc')).forEach((tag) => {
+        projectEl.insertAdjacentHTML('beforeend', `<option value="${escapeDomainHtml(tag)}">${escapeDomainHtml(tag)}</option>`);
+    });
+
+    environmentEl.innerHTML = '<option value="">全部</option>';
+    [...environments].sort((a, b) => compareDomainValues(a, b, 'asc')).forEach((tag) => {
+        environmentEl.insertAdjacentHTML('beforeend', `<option value="${escapeDomainHtml(tag)}">${escapeDomainHtml(tag)}</option>`);
+    });
+
+    providerEl.innerHTML = '<option value="">全部</option>';
+    [...providers.entries()]
+        .sort((a, b) => compareDomainValues(a[1], b[1], 'asc'))
+        .forEach(([providerId, providerLabel]) => {
+            providerEl.insertAdjacentHTML(
+                'beforeend',
+                `<option value="${escapeDomainHtml(providerId)}">${escapeDomainHtml(providerLabel)}</option>`
+            );
+        });
+
+    projectEl.value = [...projectEl.options].some((option) => option.value === savedProject) ? savedProject : '';
+    environmentEl.value = [...environmentEl.options].some((option) => option.value === savedEnvironment) ? savedEnvironment : '';
+    providerEl.value = [...providerEl.options].some((option) => option.value === savedProvider) ? savedProvider : '';
 }
 
 function applyDomainsTableLayout() {
     const tbody = document.getElementById('domainsTableBody');
     const sortFieldEl = document.getElementById('domainsSortField');
     const sortOrderEl = document.getElementById('domainsSortOrder');
-    const groupByNameEl = document.getElementById('domainsGroupByName');
+    const projectFilterEl = document.getElementById('domainsFilterProject');
+    const environmentFilterEl = document.getElementById('domainsFilterEnvironment');
+    const providerFilterEl = document.getElementById('domainsFilterProvider');
+    const groupModeEl = document.getElementById('domainsGroupMode');
     const summaryEl = document.getElementById('domainsListSummary');
-    if (!tbody || !sortFieldEl || !sortOrderEl || !groupByNameEl) return;
+    if (!tbody || !sortFieldEl || !sortOrderEl) return;
+
+    const blocks = ensureDomainBlocksMaster();
+    if (!blocks || !blocks.length) return;
+
+    populateDomainFilterOptions(blocks);
 
     const field = sortFieldEl.value;
     const order = sortOrderEl.value;
-    const groupByName = groupByNameEl.checked;
-    const blocks = collectDomainBlocks(tbody);
-    if (!blocks.length) return;
+    const projectFilter = projectFilterEl ? projectFilterEl.value : '';
+    const environmentFilter = environmentFilterEl ? environmentFilterEl.value : '';
+    const providerFilter = providerFilterEl ? providerFilterEl.value : '';
+    const groupMode = groupModeEl ? groupModeEl.value : '';
 
+    const filtered = blocks.filter((block) => blockMatchesFilters(
+        block,
+        projectFilter,
+        environmentFilter,
+        providerFilter
+    ));
     const fragment = document.createDocumentFragment();
     let groupCount = 0;
+    let visibleRows = 0;
+    const displayedBlocks = new Set();
 
-    if (groupByName) {
+    if (groupMode) {
         const grouped = new Map();
-        blocks.forEach((block) => {
-            const key = block.domainName || '';
-            if (!grouped.has(key)) grouped.set(key, []);
-            grouped.get(key).push(block);
+        filtered.forEach((block) => {
+            getDomainGroupTags(block, groupMode).forEach((tag) => {
+                const key = tag || '';
+                if (!grouped.has(key)) grouped.set(key, []);
+                grouped.get(key).push(block);
+            });
         });
 
-        const groupKeys = [...grouped.keys()].sort((a, b) => compareDomainValues(a, b, order));
+        const groupKeys = [...grouped.keys()].sort((a, b) => {
+            if (groupMode === 'provider') {
+                const labelA = grouped.get(a)[0]?.providerLabel || a;
+                const labelB = grouped.get(b)[0]?.providerLabel || b;
+                return compareDomainValues(labelA, labelB, order);
+            }
+            return compareDomainValues(a, b, order);
+        });
         groupCount = groupKeys.length;
 
         groupKeys.forEach((key) => {
             const innerField = field === 'domain_name' ? 'domain' : field;
             const groupBlocks = sortDomainBlocks(grouped.get(key), innerField, order);
-            fragment.appendChild(createDomainGroupHeader(getDomainGroupLabel(key), groupBlocks.length));
+            fragment.appendChild(createDomainGroupHeader(
+                getDomainGroupLabel(key, groupMode, groupBlocks[0]),
+                groupBlocks.length
+            ));
             groupBlocks.forEach((block) => {
-                fragment.appendChild(block.mainRow);
-                if (block.editRow) fragment.appendChild(block.editRow);
+                const clone = displayedBlocks.has(block);
+                appendDomainBlockDisplay(fragment, block, clone);
+                displayedBlocks.add(block);
+                visibleRows += 1;
             });
         });
     } else {
-        const sorted = sortDomainBlocks(blocks, field, order);
+        const sorted = sortDomainBlocks(filtered, field, order);
         sorted.forEach((block) => {
-            fragment.appendChild(block.mainRow);
-            if (block.editRow) fragment.appendChild(block.editRow);
+            appendDomainBlockDisplay(fragment, block, false);
+            visibleRows += 1;
         });
     }
 
     tbody.replaceChildren(fragment);
 
     if (summaryEl) {
-        summaryEl.textContent = groupByName
-            ? `共 ${blocks.length} 个域名，${groupCount} 个分组`
-            : `共 ${blocks.length} 个域名`;
+        const filterActive = projectFilter || environmentFilter || providerFilter;
+        let summary = `共 ${blocks.length} 个域名`;
+        if (filterActive) summary += `，筛选后 ${filtered.length} 个`;
+        if (groupMode && groupCount) summary += `，${groupCount} 个分组`;
+        if (groupMode && visibleRows > filtered.length) summary += `，显示 ${visibleRows} 条`;
+        summaryEl.textContent = summary;
     }
 
     localStorage.setItem(DOMAINS_LAYOUT_STORAGE_KEY, JSON.stringify({
         field,
         order,
-        groupByName,
+        projectFilter,
+        environmentFilter,
+        providerFilter,
+        groupMode,
     }));
+}
+
+function initDomainEditFormState(form) {
+    const providerSelect = form.querySelector('[name="provider"]');
+    const credentialSelect = form.querySelector('[name="credential_id"]');
+    if (!providerSelect || !credentialSelect) return;
+    credentialSelect.innerHTML = buildCredentialOptions(providerSelect.value, credentialSelect.value);
+    toggleEditCpcodeField(form);
+}
+
+function initDomainsTableActions() {
+    const tbody = document.getElementById('domainsTableBody');
+    if (!tbody || tbody.dataset.actionsBound) return;
+    tbody.dataset.actionsBound = '1';
+
+    tbody.querySelectorAll('.domain-edit-form').forEach(initDomainEditFormState);
+
+    tbody.addEventListener('change', (event) => {
+        const providerSelect = event.target.closest('.domain-edit-form [name="provider"]');
+        if (!providerSelect) return;
+        const form = providerSelect.closest('.domain-edit-form');
+        const credentialSelect = form.querySelector('[name="credential_id"]');
+        if (credentialSelect) {
+            credentialSelect.innerHTML = buildCredentialOptions(providerSelect.value, '');
+        }
+        toggleEditCpcodeField(form);
+    });
+
+    tbody.addEventListener('click', async (event) => {
+        const editBtn = event.target.closest('.edit-domain-btn');
+        if (editBtn) {
+            const row = editBtn.closest('tr');
+            const editRow = row && row.nextElementSibling;
+            if (editRow && editRow.classList.contains('edit-row')) {
+                editRow.classList.toggle('hidden');
+                if (!editRow.classList.contains('hidden')) {
+                    const form = editRow.querySelector('.domain-edit-form');
+                    if (form) initDomainEditFormState(form);
+                }
+            }
+            return;
+        }
+
+        const cancelBtn = event.target.closest('.cancel-edit-btn');
+        if (cancelBtn) {
+            const editRow = cancelBtn.closest('.edit-row');
+            if (editRow) editRow.classList.add('hidden');
+            return;
+        }
+
+        const refreshBtn = event.target.closest('.refresh-btn');
+        if (refreshBtn) {
+            const domain = refreshBtn.dataset.domain;
+            const row = refreshBtn.closest('tr');
+            const confirmed = confirm(`确认刷新域名 ${domain} 的CDN缓存？`);
+            if (!confirmed) return;
+
+            refreshBtn.disabled = true;
+            const originalText = refreshBtn.textContent;
+            refreshBtn.textContent = '刷新中...';
+            updateDomainRowsStatus(domain, '正在刷新', row?.querySelector('.refresh-time-cell')?.textContent || '-');
+
+            const response = await fetch('/refresh_domain', {
+                method: 'POST',
+                body: new URLSearchParams({ domain }),
+            });
+            const data = await response.json();
+            if (!data.success) {
+                refreshBtn.disabled = false;
+                refreshBtn.textContent = originalText;
+                alert('刷新失败: ' + (data.error || data.message || JSON.stringify(data)));
+                updateDomainRowsStatus(domain, data.error ? '刷新失败' : '未知状态', row?.querySelector('.refresh-time-cell')?.textContent || '-');
+                return;
+            }
+
+            const finalStatus = await pollDomainRefreshStatus(domain, row, refreshBtn);
+            if (finalStatus && finalStatus.success) {
+                alert(`刷新完成：${finalStatus.refresh_status || '未知'}`);
+            }
+            return;
+        }
+
+        const deleteBtn = event.target.closest('.delete-btn');
+        if (deleteBtn) {
+            const domain = deleteBtn.dataset.domain;
+            if (!confirm(`确认删除域名 ${domain}？此操作不可逆。`)) return;
+
+            const response = await fetch('/delete_domain', {
+                method: 'POST',
+                body: new URLSearchParams({ domain }),
+            });
+            const data = await response.json();
+            if (data.success) {
+                alert('删除成功');
+                location.reload();
+            } else {
+                alert('删除失败: ' + data.error);
+            }
+        }
+    });
+
+    tbody.addEventListener('submit', async (event) => {
+        const form = event.target.closest('.domain-edit-form');
+        if (!form) return;
+        event.preventDefault();
+
+        const domain = form.dataset.domain;
+        const providerSelect = form.querySelector('[name="provider"]');
+        const credentialSelect = form.querySelector('[name="credential_id"]');
+        const provider = providerSelect.value;
+        const credentialId = credentialSelect.value;
+        const resultDiv = form.querySelector('.edit-result');
+        resultDiv.classList.add('hidden');
+        resultDiv.textContent = '';
+
+        const domainNameInput = form.querySelector('[name="domain_name"]');
+        const allowedUsersInput = form.querySelector('[name="allowed_users"]');
+        const projectsInput = form.querySelector('[name="projects"]');
+        const environmentsInput = form.querySelector('[name="environments"]');
+        const params = {
+            domain,
+            domain_name: domainNameInput ? domainNameInput.value : '',
+            provider,
+            credential_id: credentialId,
+            projects: projectsInput ? projectsInput.value : '',
+            environments: environmentsInput ? environmentsInput.value : '',
+        };
+        if (allowedUsersInput) {
+            params.allowed_users = allowedUsersInput.value;
+        }
+        const cpcodeInput = form.querySelector('[name="cpcode"]');
+        if (cpcodeInput && provider === 'akamai') {
+            params.cpcode = cpcodeInput.value;
+        }
+
+        const response = await fetch('/edit_domain', {
+            method: 'POST',
+            body: new URLSearchParams(params),
+        });
+        const data = await response.json();
+        if (data.success) {
+            resultDiv.textContent = data.message;
+            resultDiv.classList.remove('hidden');
+            resultDiv.classList.remove('text-red-600');
+            resultDiv.classList.add('text-green-600');
+            domainBlocksMaster = null;
+            setTimeout(() => location.reload(), 1200);
+        } else {
+            resultDiv.textContent = data.error;
+            resultDiv.classList.remove('hidden');
+            resultDiv.classList.remove('text-green-600');
+            resultDiv.classList.add('text-red-600');
+        }
+    });
 }
 
 function initDomainsTableLayout() {
     const sortFieldEl = document.getElementById('domainsSortField');
     const sortOrderEl = document.getElementById('domainsSortOrder');
-    const groupByNameEl = document.getElementById('domainsGroupByName');
-    if (!sortFieldEl || !sortOrderEl || !groupByNameEl) return;
+    const projectFilterEl = document.getElementById('domainsFilterProject');
+    const environmentFilterEl = document.getElementById('domainsFilterEnvironment');
+    const providerFilterEl = document.getElementById('domainsFilterProvider');
+    const groupModeEl = document.getElementById('domainsGroupMode');
+    if (!sortFieldEl || !sortOrderEl) return;
 
     try {
         const saved = JSON.parse(localStorage.getItem(DOMAINS_LAYOUT_STORAGE_KEY) || '{}');
         if (saved.field) sortFieldEl.value = saved.field;
         if (saved.order) sortOrderEl.value = saved.order;
-        if (typeof saved.groupByName === 'boolean') groupByNameEl.checked = saved.groupByName;
+        if (projectFilterEl && saved.projectFilter) projectFilterEl.value = saved.projectFilter;
+        if (environmentFilterEl && saved.environmentFilter) environmentFilterEl.value = saved.environmentFilter;
+        if (providerFilterEl && saved.providerFilter) providerFilterEl.value = saved.providerFilter;
+        if (groupModeEl && saved.groupMode) groupModeEl.value = saved.groupMode;
     } catch (err) {
         // ignore invalid saved layout
     }
 
-    sortFieldEl.addEventListener('change', applyDomainsTableLayout);
-    sortOrderEl.addEventListener('change', applyDomainsTableLayout);
-    groupByNameEl.addEventListener('change', applyDomainsTableLayout);
+    const rerender = () => applyDomainsTableLayout();
+    sortFieldEl.addEventListener('change', rerender);
+    sortOrderEl.addEventListener('change', rerender);
+    if (projectFilterEl) projectFilterEl.addEventListener('change', rerender);
+    if (environmentFilterEl) environmentFilterEl.addEventListener('change', rerender);
+    if (providerFilterEl) providerFilterEl.addEventListener('change', rerender);
+    if (groupModeEl) groupModeEl.addEventListener('change', rerender);
     applyDomainsTableLayout();
 }
 
 initDomainsTableLayout();
+initDomainsTableActions();
 
 document.querySelectorAll('.save-credential-form').forEach(form => {
     form.addEventListener('submit', async (e) => {
@@ -309,85 +619,6 @@ document.querySelectorAll('.delete-user-btn').forEach(btn => {
     });
 });
 
-document.querySelectorAll('.edit-domain-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-        const row = btn.closest('tr');
-        const editRow = row.nextElementSibling;
-        if (editRow && editRow.classList.contains('edit-row')) {
-            editRow.classList.toggle('hidden');
-        }
-    });
-});
-
-document.querySelectorAll('.cancel-edit-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-        const editRow = btn.closest('.edit-row');
-        if (editRow) {
-            editRow.classList.add('hidden');
-        }
-    });
-});
-
-document.querySelectorAll('.domain-edit-form').forEach(form => {
-    const providerSelect = form.querySelector('[name="provider"]');
-    const credentialSelect = form.querySelector('[name="credential_id"]');
-
-    function updateDomainCredentialOptions(selectedId) {
-        credentialSelect.innerHTML = buildCredentialOptions(providerSelect.value, selectedId);
-    }
-
-    providerSelect.addEventListener('change', () => {
-        updateDomainCredentialOptions('');
-        toggleEditCpcodeField(form);
-    });
-    updateDomainCredentialOptions(credentialSelect.value);
-    toggleEditCpcodeField(form);
-
-    form.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const domain = form.dataset.domain;
-        const provider = providerSelect.value;
-        const credentialId = credentialSelect.value;
-        const resultDiv = form.querySelector('.edit-result');
-        resultDiv.classList.add('hidden');
-        resultDiv.textContent = '';
-
-        const domainNameInput = form.querySelector('[name="domain_name"]');
-        const allowedUsersInput = form.querySelector('[name="allowed_users"]');
-        const params = {
-            domain,
-            domain_name: domainNameInput ? domainNameInput.value : '',
-            provider,
-            credential_id: credentialId,
-        };
-        if (allowedUsersInput) {
-            params.allowed_users = allowedUsersInput.value;
-        }
-        const cpcodeInput = form.querySelector('[name="cpcode"]');
-        if (cpcodeInput && provider === 'akamai') {
-            params.cpcode = cpcodeInput.value;
-        }
-
-        const response = await fetch('/edit_domain', {
-            method: 'POST',
-            body: new URLSearchParams(params)
-        });
-        const data = await response.json();
-        if (data.success) {
-            resultDiv.textContent = data.message;
-            resultDiv.classList.remove('hidden');
-            resultDiv.classList.remove('text-red-600');
-            resultDiv.classList.add('text-green-600');
-            setTimeout(() => location.reload(), 1200);
-        } else {
-            resultDiv.textContent = data.error;
-            resultDiv.classList.remove('hidden');
-            resultDiv.classList.remove('text-green-600');
-            resultDiv.classList.add('text-red-600');
-        }
-    });
-});
-
 async function fetchDomainStatus(domain) {
     const response = await fetch(`/api/task_status?domain=${encodeURIComponent(domain)}`);
     if (!response.ok) {
@@ -397,11 +628,15 @@ async function fetchDomainStatus(domain) {
     return response.json();
 }
 
-function updateDomainRowStatus(row, statusText, updatedAt) {
-    const statusCell = row.querySelector('.refresh-status-cell');
-    const timeCell = row.querySelector('.refresh-time-cell');
-    if (statusCell) statusCell.textContent = statusText;
-    if (timeCell) timeCell.textContent = updatedAt || timeCell.textContent || '-';
+function updateDomainRowsStatus(domain, statusText, updatedAt) {
+    document.querySelectorAll('#domainsTableBody tr.domain-item-row').forEach((row) => {
+        if (row.dataset.domain !== domain) return;
+        const statusCell = row.querySelector('.refresh-status-cell');
+        const timeCell = row.querySelector('.refresh-time-cell');
+        if (statusCell) statusCell.textContent = statusText;
+        if (timeCell) timeCell.textContent = updatedAt || timeCell.textContent || '-';
+        if (statusCell) row.dataset.sortRefreshStatus = (statusText || '').toLowerCase();
+    });
 }
 
 async function pollDomainRefreshStatus(domain, row, btn) {
@@ -415,7 +650,7 @@ async function pollDomainRefreshStatus(domain, row, btn) {
         try {
             const data = await fetchDomainStatus(domain);
             if (data.success) {
-                updateDomainRowStatus(row, data.refresh_status || '-', data.last_refreshed_at || '-');
+                updateDomainRowsStatus(domain, data.refresh_status || '-', data.last_refreshed_at || '-');
                 if (data.refresh_status !== '正在刷新') {
                     if (btn) {
                         btn.disabled = false;
@@ -502,63 +737,6 @@ function startExistingUrlRefreshPolling() {
 
 startExistingRefreshPolling();
 startExistingUrlRefreshPolling();
-
-document.querySelectorAll('.refresh-btn').forEach(btn => {
-    btn.addEventListener('click', async () => {
-        const domain = btn.dataset.domain;
-        const row = btn.closest('tr');
-        const confirmed = confirm(`确认刷新域名 ${domain} 的CDN缓存？`);
-        if (!confirmed) return;
-
-        btn.disabled = true;
-        const originalText = btn.textContent;
-        btn.textContent = '刷新中...';
-        if (row) {
-            updateDomainRowStatus(row, '正在刷新', row.querySelector('.refresh-time-cell')?.textContent || '-');
-        }
-
-        const response = await fetch('/refresh_domain', {
-            method: 'POST',
-            body: new URLSearchParams({ domain })
-        });
-        const data = await response.json();
-        if (!data.success) {
-            btn.disabled = false;
-            btn.textContent = originalText;
-            const errText = data.error || data.message || JSON.stringify(data);
-            alert('刷新失败: ' + errText);
-            if (row) {
-                updateDomainRowStatus(row, data.error ? '刷新失败' : '未知状态', row.querySelector('.refresh-time-cell')?.textContent || '-');
-            }
-            return;
-        }
-
-        const finalStatus = await pollDomainRefreshStatus(domain, row, btn);
-        if (finalStatus && finalStatus.success) {
-            alert(`刷新完成：${finalStatus.refresh_status || '未知'}`);
-        }
-    });
-});
-
-document.querySelectorAll('.delete-btn').forEach(btn => {
-    btn.addEventListener('click', async () => {
-        const domain = btn.dataset.domain;
-        const result = confirm(`确认删除域名 ${domain}？此操作不可逆。`);
-        if (!result) return;
-
-        const response = await fetch('/delete_domain', {
-            method: 'POST',
-            body: new URLSearchParams({ domain })
-        });
-        const data = await response.json();
-        if (data.success) {
-            alert('删除成功');
-            location.reload();
-        } else {
-            alert('删除失败: ' + data.error);
-        }
-    });
-});
 
 const dnsCredentialsEl = document.getElementById('dns-credentials');
 const dnsCredentials = dnsCredentialsEl ? JSON.parse(dnsCredentialsEl.textContent) : {};

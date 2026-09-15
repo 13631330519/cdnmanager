@@ -5,12 +5,12 @@
 {% block content %}
     {% include "partials/tab_domains.html" %}
     {% include "partials/tab_urls.html" %}
-    {% if user.role == 'admin' %}
+                {% if user.role == 'admin' %}
     {% include "partials/tab_credentials.html" %}
     {% include "partials/tab_dns_credentials.html" %}
     {% include "partials/tab_root_domains.html" %}
     {% include "partials/tab_users.html" %}
-    {% endif %}
+                {% endif %}
 {% endblock %}
 
 {% block scripts %}

@@ -19,7 +19,7 @@ from common import (
     REFRESH_STATUS_REFRESHING,
 )
 
-JSON_FIELDS = {'allowed_users', 'refresh_task_detail', 'log_entry'}
+JSON_FIELDS = {'allowed_users', 'projects', 'environments', 'refresh_task_detail', 'log_entry'}
 POLLING_LOCK_NAME = 'task_polling'
 POLLING_LEASE_SECONDS = 90
 DB_RETRY_ATTEMPTS = 5
@@ -122,6 +122,8 @@ def _ensure_column(conn, table, column, coltype):
 
 def migrate_schema(conn):
     _ensure_column(conn, 'domains', 'cpcode', 'TEXT')
+    _ensure_column(conn, 'domains', 'projects', 'TEXT')
+    _ensure_column(conn, 'domains', 'environments', 'TEXT')
     _ensure_column(conn, 'provider_credentials', 'extra_key', 'TEXT')
     _ensure_column(conn, 'provider_credentials', 'extra_secret', 'TEXT')
 
@@ -315,8 +317,9 @@ def load_credentials():
 def load_domains():
     return query_all(
         '''
-        SELECT domain, domain_name, provider, credential_id, cpcode, allowed_users, added_by, added_at,
-               refresh_status, last_refreshed_at, task_id, refresh_task_status, refresh_task_detail
+        SELECT domain, domain_name, provider, credential_id, cpcode, projects, environments,
+               allowed_users, added_by, added_at, refresh_status, last_refreshed_at, task_id,
+               refresh_task_status, refresh_task_detail
         FROM domains ORDER BY domain
         '''
     )
@@ -342,8 +345,9 @@ def load_urls():
 def load_refreshing_domains():
     return query_all(
         '''
-        SELECT domain, domain_name, provider, credential_id, cpcode, allowed_users, added_by, added_at,
-               refresh_status, last_refreshed_at, task_id, refresh_task_status, refresh_task_detail
+        SELECT domain, domain_name, provider, credential_id, cpcode, projects, environments,
+               allowed_users, added_by, added_at, refresh_status, last_refreshed_at, task_id,
+               refresh_task_status, refresh_task_detail
         FROM domains
         WHERE refresh_status = ? AND task_id IS NOT NULL
         ''',
@@ -471,8 +475,9 @@ def delete_credential(provider, credential_id):
 def get_domain(domain):
     return query_one(
         '''
-        SELECT domain, domain_name, provider, credential_id, cpcode, allowed_users, added_by, added_at,
-               refresh_status, last_refreshed_at, task_id, refresh_task_status, refresh_task_detail
+        SELECT domain, domain_name, provider, credential_id, cpcode, projects, environments,
+               allowed_users, added_by, added_at, refresh_status, last_refreshed_at, task_id,
+               refresh_task_status, refresh_task_detail
         FROM domains WHERE domain = ?
         ''',
         (domain,),
@@ -484,9 +489,10 @@ def upsert_domain(domain):
         conn.execute(
             '''
             INSERT OR REPLACE INTO domains
-            (domain, domain_name, provider, credential_id, cpcode, allowed_users, added_by, added_at,
-             refresh_status, last_refreshed_at, task_id, refresh_task_status, refresh_task_detail)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (domain, domain_name, provider, credential_id, cpcode, projects, environments, allowed_users,
+             added_by, added_at, refresh_status, last_refreshed_at, task_id, refresh_task_status,
+             refresh_task_detail)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''',
             (
                 domain.get('domain'),
@@ -494,6 +500,8 @@ def upsert_domain(domain):
                 domain.get('provider'),
                 domain.get('credential_id'),
                 domain.get('cpcode'),
+                json.dumps(domain.get('projects', []), ensure_ascii=False),
+                json.dumps(domain.get('environments', []), ensure_ascii=False),
                 json.dumps(domain.get('allowed_users', []), ensure_ascii=False),
                 domain.get('added_by'),
                 domain.get('added_at'),
@@ -524,8 +532,8 @@ def update_domain_fields(domain_name, updates):
     set_clauses = []
     params = []
     for key, value in updates.items():
-        if key == 'allowed_users':
-            set_clauses.append('allowed_users = ?')
+        if key in {'allowed_users', 'projects', 'environments'}:
+            set_clauses.append(f'{key} = ?')
             params.append(json.dumps(value, ensure_ascii=False))
         elif key == 'refresh_task_detail':
             set_clauses.append('refresh_task_detail = ?')
