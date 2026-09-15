@@ -77,6 +77,151 @@ if (addProviderSelect && addCredentialSelect) {
     updateAddCredentialOptions();
 }
 
+const DOMAINS_LAYOUT_STORAGE_KEY = 'cdnmanager.domainsLayout';
+
+function compareDomainValues(a, b, order) {
+    const emptyA = !a;
+    const emptyB = !b;
+    if (emptyA && emptyB) return 0;
+    if (emptyA) return order === 'asc' ? 1 : -1;
+    if (emptyB) return order === 'asc' ? -1 : 1;
+    const result = a.localeCompare(b, 'zh-CN', { numeric: true, sensitivity: 'base' });
+    return order === 'desc' ? -result : result;
+}
+
+function collectDomainBlocks(tbody) {
+    const blocks = [];
+    const rows = Array.from(tbody.children);
+    for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        if (!row.classList.contains('domain-item-row')) continue;
+        let editRow = null;
+        const next = rows[i + 1];
+        if (next && next.classList.contains('edit-row') && next.dataset.domain === row.dataset.domain) {
+            editRow = next;
+            i += 1;
+        }
+        blocks.push({
+            mainRow: row,
+            editRow,
+            domainName: row.dataset.sortDomainName || '',
+            sortValues: {
+                domain_name: row.dataset.sortDomainName || '',
+                domain: row.dataset.sortDomain || '',
+                provider: row.dataset.sortProvider || '',
+                added_at: row.dataset.sortAddedAt || '',
+                refresh_status: row.dataset.sortRefreshStatus || '',
+            },
+        });
+    }
+    return blocks;
+}
+
+function sortDomainBlocks(blocks, field, order) {
+    return [...blocks].sort((a, b) => compareDomainValues(
+        a.sortValues[field] || '',
+        b.sortValues[field] || '',
+        order
+    ));
+}
+
+function createDomainGroupHeader(label, count) {
+    const tr = document.createElement('tr');
+    tr.className = 'domain-group-header bg-indigo-50 border-t-2 border-indigo-100';
+    tr.innerHTML = `<td colspan="11" class="px-6 py-2.5 text-sm font-semibold text-indigo-800">
+        <i class="fas fa-folder-open mr-2"></i>${label}
+        <span class="ml-2 text-xs font-normal text-indigo-600">(${count} 个域名)</span>
+    </td>`;
+    return tr;
+}
+
+function getDomainGroupLabel(name) {
+    return name ? name : '(未命名)';
+}
+
+function applyDomainsTableLayout() {
+    const tbody = document.getElementById('domainsTableBody');
+    const sortFieldEl = document.getElementById('domainsSortField');
+    const sortOrderEl = document.getElementById('domainsSortOrder');
+    const groupByNameEl = document.getElementById('domainsGroupByName');
+    const summaryEl = document.getElementById('domainsListSummary');
+    if (!tbody || !sortFieldEl || !sortOrderEl || !groupByNameEl) return;
+
+    const field = sortFieldEl.value;
+    const order = sortOrderEl.value;
+    const groupByName = groupByNameEl.checked;
+    const blocks = collectDomainBlocks(tbody);
+    if (!blocks.length) return;
+
+    const fragment = document.createDocumentFragment();
+    let groupCount = 0;
+
+    if (groupByName) {
+        const grouped = new Map();
+        blocks.forEach((block) => {
+            const key = block.domainName || '';
+            if (!grouped.has(key)) grouped.set(key, []);
+            grouped.get(key).push(block);
+        });
+
+        const groupKeys = [...grouped.keys()].sort((a, b) => compareDomainValues(a, b, order));
+        groupCount = groupKeys.length;
+
+        groupKeys.forEach((key) => {
+            const innerField = field === 'domain_name' ? 'domain' : field;
+            const groupBlocks = sortDomainBlocks(grouped.get(key), innerField, order);
+            fragment.appendChild(createDomainGroupHeader(getDomainGroupLabel(key), groupBlocks.length));
+            groupBlocks.forEach((block) => {
+                fragment.appendChild(block.mainRow);
+                if (block.editRow) fragment.appendChild(block.editRow);
+            });
+        });
+    } else {
+        const sorted = sortDomainBlocks(blocks, field, order);
+        sorted.forEach((block) => {
+            fragment.appendChild(block.mainRow);
+            if (block.editRow) fragment.appendChild(block.editRow);
+        });
+    }
+
+    tbody.replaceChildren(fragment);
+
+    if (summaryEl) {
+        summaryEl.textContent = groupByName
+            ? `共 ${blocks.length} 个域名，${groupCount} 个分组`
+            : `共 ${blocks.length} 个域名`;
+    }
+
+    localStorage.setItem(DOMAINS_LAYOUT_STORAGE_KEY, JSON.stringify({
+        field,
+        order,
+        groupByName,
+    }));
+}
+
+function initDomainsTableLayout() {
+    const sortFieldEl = document.getElementById('domainsSortField');
+    const sortOrderEl = document.getElementById('domainsSortOrder');
+    const groupByNameEl = document.getElementById('domainsGroupByName');
+    if (!sortFieldEl || !sortOrderEl || !groupByNameEl) return;
+
+    try {
+        const saved = JSON.parse(localStorage.getItem(DOMAINS_LAYOUT_STORAGE_KEY) || '{}');
+        if (saved.field) sortFieldEl.value = saved.field;
+        if (saved.order) sortOrderEl.value = saved.order;
+        if (typeof saved.groupByName === 'boolean') groupByNameEl.checked = saved.groupByName;
+    } catch (err) {
+        // ignore invalid saved layout
+    }
+
+    sortFieldEl.addEventListener('change', applyDomainsTableLayout);
+    sortOrderEl.addEventListener('change', applyDomainsTableLayout);
+    groupByNameEl.addEventListener('change', applyDomainsTableLayout);
+    applyDomainsTableLayout();
+}
+
+initDomainsTableLayout();
+
 document.querySelectorAll('.save-credential-form').forEach(form => {
     form.addEventListener('submit', async (e) => {
         e.preventDefault();

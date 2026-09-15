@@ -40,7 +40,32 @@
     {% endif %}
 
     <div class="bg-white rounded-lg shadow-md p-6">
-        <h2 class="text-xl font-semibold mb-4 text-gray-800">已管理域名列表</h2>
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+            <h2 class="text-xl font-semibold text-gray-800">已管理域名列表</h2>
+            {% if domains %}
+            <div id="domainsListControls" class="flex flex-wrap items-center gap-3 text-sm">
+                <label class="flex items-center gap-2 text-gray-600">
+                    <span>排序</span>
+                    <select id="domainsSortField" class="px-2 py-1 border rounded focus:ring-2 focus:ring-indigo-500">
+                        <option value="domain_name">域名名称</option>
+                        <option value="domain">域名</option>
+                        <option value="provider">提供商</option>
+                        <option value="added_at">添加时间</option>
+                        <option value="refresh_status">刷新状态</option>
+                    </select>
+                    <select id="domainsSortOrder" class="px-2 py-1 border rounded focus:ring-2 focus:ring-indigo-500">
+                        <option value="asc">升序</option>
+                        <option value="desc">降序</option>
+                    </select>
+                </label>
+                <label class="flex items-center gap-2 text-gray-600 cursor-pointer">
+                    <input type="checkbox" id="domainsGroupByName" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                    <span>按域名名称分组</span>
+                </label>
+                <span id="domainsListSummary" class="text-gray-500"></span>
+            </div>
+            {% endif %}
+        </div>
         {% if domains %}
         <div class="overflow-x-auto">
             <table class="min-w-full divide-y divide-gray-200">
@@ -59,9 +84,15 @@
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
                     </tr>
                 </thead>
-                <tbody class="divide-y divide-gray-200">
+                <tbody id="domainsTableBody" class="divide-y divide-gray-200">
                     {% for domain in domains %}
-                    <tr class="hover:bg-gray-50 transition">
+                    <tr class="domain-item-row hover:bg-gray-50 transition"
+                        data-domain="{{ domain.domain }}"
+                        data-sort-domain="{{ domain.domain | lower }}"
+                        data-sort-domain-name="{{ (domain.domain_name or '') | lower }}"
+                        data-sort-provider="{{ domain.provider }}"
+                        data-sort-added-at="{{ domain.added_at or '' }}"
+                        data-sort-refresh-status="{{ domain.refresh_status or '' }}">
                         <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ domain.domain }}</td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ domain.domain_name or '-' }}</td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -101,7 +132,7 @@
                         </td>
                     </tr>
                     {% if user.role == 'admin' or user.role == 'domain_admin' %}
-                    <tr class="edit-row hidden bg-gray-50">
+                    <tr class="edit-row hidden bg-gray-50" data-domain="{{ domain.domain }}">
                         <td colspan="11" class="px-6 py-4">
                             <form class="domain-edit-form grid gap-4 md:grid-cols-4 items-end" data-domain="{{ domain.domain }}">
                                 {% if user.role == 'admin' %}
