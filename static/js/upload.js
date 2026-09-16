@@ -1,9 +1,12 @@
 (function () {
     const MULTIPART_THRESHOLD = 100 * 1024 * 1024;
     const PART_SIZE = 8 * 1024 * 1024;
-    const MAX_SMALL_CONCURRENCY = 16;
-    const MAX_LARGE_CONCURRENCY = 2;
-    const MAX_PART_CONCURRENCY = 4;
+    const BATCH_INIT_SIZE = 1000;
+    const PRESIGN_BATCH_SIZE = 50;
+    const VIRTUAL_LIST_THRESHOLD = 500;
+    const MAX_SMALL_CONCURRENCY = 20;
+    const MAX_LARGE_CONCURRENCY = 3;
+    const MAX_PART_CONCURRENCY = 6;
 
     const appRoot = document.getElementById('storageManagerApp');
     if (!appRoot) return;
@@ -19,6 +22,8 @@
         fileProgress: {},
         doneBytes: 0,
         totalBytes: 0,
+        currentJobId: null,
+        eventSource: null,
     };
 
     const els = {
@@ -46,6 +51,8 @@
         globalText: document.getElementById('globalProgressText'),
         globalPercent: document.getElementById('globalProgressPercent'),
         globalBar: document.getElementById('globalProgressBar'),
+        jobHistory: document.getElementById('uploadJobHistory'),
+        jobHistoryBody: document.getElementById('uploadJobHistoryBody'),
     };
 
     const userRole = appRoot.dataset.userRole || 'user';
@@ -200,15 +207,32 @@
         els.remoteDelete.disabled = !has || !state.canDelete;
     }
 
+    function rowsToRender() {
+        const items = state.localItems;
+        if (items.length <= VIRTUAL_LIST_THRESHOLD) {
+            return items.map((item, index) => ({ item, index }));
+        }
+        const active = [];
+        items.forEach((item, index) => {
+            if (item.status === 'uploading' || item.status === 'failed' || item.selected) {
+                active.push({ item, index });
+            }
+        });
+        return (active.length ? active : items.slice(0, 120).map((item, index) => ({ item, index })));
+    }
+
     function renderLocalList() {
         const has = state.localItems.length > 0;
         els.localEmpty.classList.toggle('hidden', has);
         els.localList.innerHTML = '';
         let total = 0;
-        state.localItems.forEach((item, index) => {
-            total += item.file.size;
+        state.localItems.forEach((item) => { total += item.file.size; });
+
+        const virtual = state.localItems.length > VIRTUAL_LIST_THRESHOLD;
+        rowsToRender().forEach(({ item, index }) => {
             const tr = document.createElement('tr');
             tr.className = 'hover:bg-gray-50';
+            tr.dataset.index = String(index);
             const statusClass = item.status === 'done' ? 'text-green-600' : item.status === 'failed' ? 'text-red-600' : 'text-gray-600';
             tr.innerHTML = `
                 <td class="px-3 py-2"><input type="checkbox" class="local-check rounded" data-index="${index}" ${item.selected ? 'checked' : ''} ${state.uploading ? 'disabled' : ''}></td>
@@ -220,9 +244,13 @@
                 </td>`;
             els.localList.appendChild(tr);
         });
-        els.localSummary.textContent = has
-            ? `已选 ${state.localItems.filter((i) => i.selected).length}/${state.localItems.length} 个，共 ${formatBytes(total)}`
+
+        const selectedCount = state.localItems.filter((i) => i.selected).length;
+        let summary = has
+            ? `已选 ${selectedCount}/${state.localItems.length} 个，共 ${formatBytes(total)}`
             : '未选择文件';
+        if (virtual) summary += ` · 虚拟列表（${state.localItems.length} 文件，显示活跃/选中行）`;
+        els.localSummary.textContent = summary;
         els.localUpload.disabled = !has || state.uploading || !state.localItems.some((i) => i.selected);
 
         els.localList.querySelectorAll('.local-check').forEach((cb) => {
@@ -230,6 +258,92 @@
                 const idx = parseInt(cb.dataset.index, 10);
                 state.localItems[idx].selected = cb.checked;
                 renderLocalList();
+            });
+        });
+    }
+
+    async function sendHeartbeat(fileId, bytesUploaded) {
+        await fetchJson(`/api/upload/files/${fileId}/progress`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ bytes_uploaded: bytesUploaded, status: 'uploading' }),
+        }).catch(() => {});
+    }
+
+    function subscribeJobStream(jobId) {
+        if (state.eventSource) state.eventSource.close();
+        const es = new EventSource(`/api/upload/jobs/${jobId}/stream`);
+        es.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                const pct = data.total_bytes
+                    ? Math.min(100, Math.round((data.done_bytes / data.total_bytes) * 100))
+                    : 0;
+                els.globalText.textContent = `Job ${data.done_files}/${data.total_files} 完成 · 失败 ${data.failed_files || 0}`;
+                els.globalPercent.textContent = `${pct}%`;
+                els.globalBar.style.width = `${pct}%`;
+            } catch (_) { /* ignore */ }
+        };
+        state.eventSource = es;
+    }
+
+    async function createJobInBatches(manifest) {
+        let jobId = null;
+        let allFiles = [];
+        for (let offset = 0; offset < manifest.length; offset += BATCH_INIT_SIZE) {
+            const batch = manifest.slice(offset, offset + BATCH_INIT_SIZE);
+            if (offset === 0) {
+                const data = await fetchJson('/api/upload/jobs', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        storage_target_id: els.target.value,
+                        remote_prefix: els.remotePath.value.trim(),
+                        refresh_after: els.refreshAfter.checked,
+                        files: batch,
+                    }),
+                });
+                jobId = data.job_id;
+                allFiles = data.files || [];
+            } else {
+                const data = await fetchJson(`/api/upload/jobs/${jobId}/init-batch`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ files: batch }),
+                });
+                allFiles = allFiles.concat(data.files || []);
+            }
+        }
+        return { jobId, files: allFiles };
+    }
+
+    async function loadJobHistory() {
+        if (!els.jobHistoryBody) return;
+        const data = await fetchJson('/api/upload/jobs?limit=15');
+        els.jobHistoryBody.innerHTML = '';
+        (data.jobs || []).forEach((job) => {
+            const tr = document.createElement('tr');
+            tr.className = 'hover:bg-gray-50';
+            tr.innerHTML = `
+                <td class="px-3 py-2 font-mono text-xs">${job.id}</td>
+                <td class="px-3 py-2">${job.status}</td>
+                <td class="px-3 py-2">${job.done_files}/${job.total_files}</td>
+                <td class="px-3 py-2 text-xs text-gray-500">${job.created_at || '-'}</td>
+                <td class="px-3 py-2">
+                    ${job.failed_files ? `<a class="text-red-600 hover:underline text-xs" href="/api/upload/jobs/${job.id}/manifest-failures.csv">失败 CSV</a>` : '-'}
+                    <button type="button" class="ml-2 text-gray-500 hover:text-red-600 text-xs job-cleanup-btn" data-job-id="${job.id}">清理</button>
+                </td>`;
+            els.jobHistoryBody.appendChild(tr);
+        });
+        els.jobHistoryBody.querySelectorAll('.job-cleanup-btn').forEach((btn) => {
+            btn.addEventListener('click', async () => {
+                if (!confirm('确认清理该 Job 记录？')) return;
+                await fetchJson(`/api/upload/jobs/${btn.dataset.jobId}/cleanup`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ force: true }),
+                });
+                loadJobHistory();
             });
         });
     }
@@ -264,7 +378,10 @@
     }
 
     async function uploadPut(file, fileMeta, startData, onProgress) {
-        const xhr = await xhrPut(startData.upload_url, file, onProgress);
+        const xhr = await xhrPut(startData.upload_url, file, (loaded, total) => {
+            onProgress(loaded, total);
+            if (loaded % (512 * 1024) < 65536) sendHeartbeat(fileMeta.id, loaded);
+        });
         let etag = xhr.getResponseHeader('ETag') || xhr.getResponseHeader('etag') || '';
         etag = etag.replace(/"/g, '');
         if (!etag) throw new Error('未读取到 ETag，请在 CORS 中暴露 ETag');
@@ -273,6 +390,40 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ etag }),
         });
+    }
+
+    async function uploadSmallPresignBatch(entries) {
+        for (let i = 0; i < entries.length; i += PRESIGN_BATCH_SIZE) {
+            if (state.cancelled) return;
+            const chunk = entries.slice(i, i + PRESIGN_BATCH_SIZE);
+            const presign = await fetchJson('/api/upload/files/presign-batch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ file_ids: chunk.map((e) => e.meta.id) }),
+            });
+            const urlMap = new Map((presign.files || []).map((f) => [f.file_id, f.upload_url]));
+            await runPool(chunk, MAX_SMALL_CONCURRENCY, async (entry) => {
+                if (state.cancelled) return;
+                try {
+                    const url = urlMap.get(entry.meta.id);
+                    if (!url) throw new Error('presign 缺失');
+                    await uploadPut(entry.item.file, entry.meta, { upload_url: url }, (loaded, total) => {
+                        state.fileProgress[entry.meta.id] = loaded;
+                        const percent = total ? Math.min(100, Math.round((loaded / total) * 100)) : 0;
+                        updateLocalItem(entry.index, { progress: percent, statusText: `${percent}%`, status: 'uploading' });
+                        updateGlobalProgress();
+                    });
+                    delete state.fileProgress[entry.meta.id];
+                    state.doneBytes += entry.item.file.size;
+                    updateLocalItem(entry.index, { status: 'done', statusText: '完成', progress: 100 });
+                    if (window.UploadIdb) {
+                        await UploadIdb.saveFileState(state.currentJobId, entry.meta.id, entry.item.path, { status: 'done' });
+                    }
+                } catch (err) {
+                    updateLocalItem(entry.index, { status: 'failed', statusText: err.message.slice(0, 80), progress: 0 });
+                }
+            });
+        }
     }
 
     async function uploadMultipart(file, fileMeta, startData, fileKey, onProgress) {
@@ -374,7 +525,7 @@
         setGlobalProgressVisible(true);
         els.localUpload.disabled = true;
         els.localCancel.classList.remove('hidden');
-        els.globalText.textContent = `正在上传 0/${selected.length} 个文件...`;
+        els.globalText.textContent = `正在创建 Job（${selected.length} 文件）...`;
         updateGlobalProgress();
 
         const manifest = selected.map(({ item }) => ({
@@ -385,17 +536,22 @@
 
         let jobId = null;
         try {
-            const jobData = await fetchJson('/api/upload/jobs', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    storage_target_id: els.target.value,
-                    remote_prefix: els.remotePath.value.trim(),
-                    refresh_after: els.refreshAfter.checked,
-                    files: manifest,
-                }),
-            });
-            jobId = jobData.job_id;
+            const jobData = await createJobInBatches(manifest);
+            jobId = jobData.jobId;
+            state.currentJobId = jobId;
+            subscribeJobStream(jobId);
+
+            if (window.UploadIdb) {
+                await UploadIdb.saveSession({
+                    jobId,
+                    active: true,
+                    storageTargetId: els.target.value,
+                    remotePrefix: els.remotePath.value.trim(),
+                    refreshAfter: els.refreshAfter.checked,
+                    createdAt: new Date().toISOString(),
+                    totalFiles: selected.length,
+                });
+            }
 
             const large = [];
             const small = [];
@@ -406,11 +562,16 @@
                 else small.push(entry);
             });
 
+            els.globalText.textContent = `正在上传 0/${selected.length} 个文件...`;
+
             let doneCount = 0;
-            async function handleEntry(entry) {
+            async function handleLargeEntry(entry) {
                 if (state.cancelled) return;
                 try {
                     await uploadSingleLocal(entry.item, entry.index, entry.meta);
+                    if (window.UploadIdb) {
+                        await UploadIdb.saveFileState(jobId, entry.meta.id, entry.item.path, { status: 'done' });
+                    }
                 } catch (err) {
                     updateLocalItem(entry.index, { status: 'failed', statusText: err.message.slice(0, 80), progress: 0 });
                 }
@@ -418,37 +579,50 @@
                 els.globalText.textContent = `正在上传 ${doneCount}/${selected.length} 个文件...`;
             }
 
-            await runPool(large, MAX_LARGE_CONCURRENCY, handleEntry);
-            await runPool(small, MAX_SMALL_CONCURRENCY, handleEntry);
+            await runPool(large, MAX_LARGE_CONCURRENCY, handleLargeEntry);
+            await uploadSmallPresignBatch(small);
+            doneCount = selected.length;
 
             const failed = state.localItems.filter((i) => i.status === 'failed').length;
             els.globalText.textContent = failed
                 ? `上传结束：${selected.length - failed} 成功，${failed} 失败`
                 : `全部上传完成（${selected.length} 个文件）`;
 
-            if (jobId) {
-                await fetchJson(`/api/upload/jobs/${jobId}/cleanup`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ force: true }),
-                }).catch(() => {});
+            if (jobId && els.refreshAfter.checked) {
+                await fetchJson(`/api/upload/jobs/${jobId}/refresh-cdn`, { method: 'POST' }).catch(() => {});
             }
+            if (window.UploadIdb && jobId) {
+                await UploadIdb.saveSession({ jobId, active: false });
+            }
+            if (state.eventSource) state.eventSource.close();
             await loadRemoteList();
+            await loadJobHistory();
         } catch (err) {
             els.globalText.textContent = `上传失败: ${err.message}`;
-            if (jobId) {
-                await fetchJson(`/api/upload/jobs/${jobId}/cleanup`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ force: true }),
-                }).catch(() => {});
-            }
         } finally {
             state.uploading = false;
             state.cancelled = false;
             els.localCancel.classList.add('hidden');
             renderLocalList();
         }
+    }
+
+    async function tryResumeSession() {
+        if (!window.UploadIdb) return;
+        const session = await UploadIdb.getActiveSession();
+        if (!session || !session.active) return;
+        const ok = confirm(`检测到未完成的上传 Job (${session.jobId})，是否加载待传文件列表？需重新选择相同文件夹以匹配文件。`);
+        if (!ok) {
+            await UploadIdb.saveSession({ jobId: session.jobId, active: false });
+            return;
+        }
+        state.currentJobId = session.jobId;
+        els.target.value = session.storageTargetId || els.target.value;
+        els.remotePath.value = session.remotePrefix || '';
+        subscribeJobStream(session.jobId);
+        const data = await fetchJson(`/api/upload/jobs/${session.jobId}/files?status=pending&limit=1000`);
+        els.globalText.textContent = `待恢复：${data.total} 个 pending 文件（请重新选择文件夹后上传）`;
+        setGlobalProgressVisible(true);
     }
 
     async function downloadSelectedRemote() {
@@ -598,5 +772,9 @@
         });
     });
 
+    document.getElementById('uploadJobHistoryReload')?.addEventListener('click', () => loadJobHistory());
+
     loadRemoteList().catch(() => {});
+    loadJobHistory().catch(() => {});
+    tryResumeSession().catch(() => {});
 })();

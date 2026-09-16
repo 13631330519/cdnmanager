@@ -36,4 +36,9 @@ def create_app():
         from cdnmanager.routes.cdn.domains import start_task_polling_thread
         start_task_polling_thread()
 
+    from cdnmanager.config import ENABLE_UPLOAD_TIMEOUT_SCAN
+    if ENABLE_UPLOAD_TIMEOUT_SCAN:
+        from cdnmanager.services.upload_workers import start_upload_timeout_thread
+        start_upload_timeout_thread()
+
     return app

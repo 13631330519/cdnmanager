@@ -115,8 +115,30 @@
             </div>
         </div>
 
+        <div id="uploadJobHistory" class="bg-white rounded-xl shadow-md p-4 md:p-5">
+            <div class="flex items-center justify-between mb-3">
+                <h3 class="font-semibold text-gray-800"><i class="fas fa-tasks mr-2 text-indigo-600"></i>上传 Job 历史</h3>
+                <button type="button" id="uploadJobHistoryReload" class="text-sm text-indigo-600 hover:underline">刷新</button>
+            </div>
+            <p class="text-xs text-gray-500 mb-2">Phase 2：分批 init（1000/批）、批量 presign（50/批）、IndexedDB 断点、SSE 进度、15 分钟心跳超时</p>
+            <div class="overflow-x-auto">
+                <table class="min-w-full text-sm">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-3 py-2 text-left text-gray-500">Job ID</th>
+                            <th class="px-3 py-2 text-left text-gray-500">状态</th>
+                            <th class="px-3 py-2 text-left text-gray-500">进度</th>
+                            <th class="px-3 py-2 text-left text-gray-500">创建时间</th>
+                            <th class="px-3 py-2 text-left text-gray-500">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="uploadJobHistoryBody" class="divide-y divide-gray-100"></tbody>
+                </table>
+            </div>
+        </div>
+
         <p class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
-            传输均走客户端 ↔ 对象存储直链，服务器仅签发凭证与列举目录。上传完成后临时 Job 记录会自动清除。
+            传输均走客户端 ↔ 对象存储直链，服务器仅签发凭证与列举目录。Job 记录保留至手动清理，支持失败 manifest CSV 导出。
             若直传失败，请确认 Bucket CORS 已允许 PUT/GET/HEAD 并暴露 <code>ETag</code>。
         </p>
     </div>

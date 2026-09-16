@@ -35,6 +35,9 @@ def get_adapter(provider):
         return storage_oss
     if provider == 'cos':
         return storage_cos
+    if provider == 'oos':
+        from cdnmanager.providers import storage_oos
+        return storage_oos
     raise ValueError(f'不支持的存储类型: {provider}')
 
 

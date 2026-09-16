@@ -196,6 +196,7 @@ def migrate_schema(conn):
     )
     _ensure_column(conn, 'storage_targets', 'allow_user_delete', 'INTEGER DEFAULT 0')
     _ensure_column(conn, 'urls', 'domain', 'TEXT')
+    _ensure_column(conn, 'upload_files', 'last_heartbeat_at', 'TEXT')
     _backfill_url_domains(conn)
     conn.execute(
         '''
@@ -1047,33 +1048,40 @@ def update_upload_job(job_id, updates):
     return True
 
 
+def _upload_file_row_values(item):
+    return (
+        item.get('id'),
+        item.get('job_id'),
+        item.get('relative_path'),
+        item.get('size'),
+        item.get('mime'),
+        item.get('status'),
+        item.get('bytes_uploaded', 0),
+        item.get('storage_key'),
+        item.get('upload_id'),
+        item.get('etag'),
+        item.get('error'),
+        item.get('retry_count', 0),
+        item.get('started_at'),
+        item.get('finished_at'),
+        item.get('last_heartbeat_at'),
+    )
+
+
 def insert_upload_files(files):
+    if not files:
+        return
+
     def work(conn):
-        for item in files:
-            conn.execute(
-                '''
-                INSERT INTO upload_files
-                (id, job_id, relative_path, size, mime, status, bytes_uploaded, storage_key,
-                 upload_id, etag, error, retry_count, started_at, finished_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ''',
-                (
-                    item.get('id'),
-                    item.get('job_id'),
-                    item.get('relative_path'),
-                    item.get('size'),
-                    item.get('mime'),
-                    item.get('status'),
-                    item.get('bytes_uploaded', 0),
-                    item.get('storage_key'),
-                    item.get('upload_id'),
-                    item.get('etag'),
-                    item.get('error'),
-                    item.get('retry_count', 0),
-                    item.get('started_at'),
-                    item.get('finished_at'),
-                ),
-            )
+        conn.executemany(
+            '''
+            INSERT INTO upload_files
+            (id, job_id, relative_path, size, mime, status, bytes_uploaded, storage_key,
+             upload_id, etag, error, retry_count, started_at, finished_at, last_heartbeat_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''',
+            [_upload_file_row_values(item) for item in files],
+        )
 
     run_write(work)
 
@@ -1082,7 +1090,7 @@ def get_upload_file(file_id):
     return query_one(
         '''
         SELECT id, job_id, relative_path, size, mime, status, bytes_uploaded, storage_key,
-               upload_id, etag, error, retry_count, started_at, finished_at
+               upload_id, etag, error, retry_count, started_at, finished_at, last_heartbeat_at
         FROM upload_files WHERE id = ?
         ''',
         (file_id,),
@@ -1107,26 +1115,98 @@ def update_upload_file(file_id, updates):
     return True
 
 
+_UPLOAD_FILE_COLUMNS = '''
+    id, job_id, relative_path, size, mime, status, bytes_uploaded, storage_key,
+    upload_id, etag, error, retry_count, started_at, finished_at, last_heartbeat_at
+'''
+
+
 def list_upload_files(job_id, status=None, limit=500, offset=0):
     if status:
         return query_all(
-            '''
-            SELECT id, job_id, relative_path, size, mime, status, bytes_uploaded, storage_key,
-                   upload_id, etag, error, retry_count, started_at, finished_at
+            f'''
+            SELECT {_UPLOAD_FILE_COLUMNS}
             FROM upload_files WHERE job_id = ? AND status = ?
             ORDER BY relative_path LIMIT ? OFFSET ?
             ''',
             (job_id, status, limit, offset),
         )
     return query_all(
-        '''
-        SELECT id, job_id, relative_path, size, mime, status, bytes_uploaded, storage_key,
-               upload_id, etag, error, retry_count, started_at, finished_at
+        f'''
+        SELECT {_UPLOAD_FILE_COLUMNS}
         FROM upload_files WHERE job_id = ?
         ORDER BY relative_path LIMIT ? OFFSET ?
         ''',
         (job_id, limit, offset),
     )
+
+
+def list_upload_jobs(username=None, limit=50, offset=0):
+    if username:
+        return query_all(
+            '''
+            SELECT id, username, storage_target_id, remote_prefix, status, total_files, total_bytes,
+                   done_files, done_bytes, failed_files, refresh_after, created_at, finished_at
+            FROM upload_jobs WHERE username = ?
+            ORDER BY created_at DESC LIMIT ? OFFSET ?
+            ''',
+            (username, limit, offset),
+        )
+    return query_all(
+        '''
+        SELECT id, username, storage_target_id, remote_prefix, status, total_files, total_bytes,
+               done_files, done_bytes, failed_files, refresh_after, created_at, finished_at
+        FROM upload_jobs
+        ORDER BY created_at DESC LIMIT ? OFFSET ?
+        ''',
+        (limit, offset),
+    )
+
+
+def count_upload_jobs(username=None):
+    if username:
+        row = query_one('SELECT COUNT(*) AS cnt FROM upload_jobs WHERE username = ?', (username,))
+    else:
+        row = query_one('SELECT COUNT(*) AS cnt FROM upload_jobs')
+    return row['cnt'] if row else 0
+
+
+def list_failed_upload_files(job_id):
+    return query_all(
+        f'''
+        SELECT {_UPLOAD_FILE_COLUMNS}
+        FROM upload_files WHERE job_id = ? AND status = 'failed'
+        ORDER BY relative_path
+        ''',
+        (job_id,),
+    )
+
+
+def list_stale_uploading_files(cutoff_iso):
+    return query_all(
+        f'''
+        SELECT {_UPLOAD_FILE_COLUMNS}
+        FROM upload_files
+        WHERE status IN ('uploading', 'verifying')
+          AND last_heartbeat_at IS NOT NULL
+          AND last_heartbeat_at < ?
+        ''',
+        (cutoff_iso,),
+    )
+
+
+def increment_upload_job_totals(job_id, add_files, add_bytes):
+    def work(conn):
+        conn.execute(
+            '''
+            UPDATE upload_jobs
+            SET total_files = total_files + ?, total_bytes = total_bytes + ?
+            WHERE id = ?
+            ''',
+            (add_files, add_bytes, job_id),
+        )
+
+    run_write(work)
 
 
 def count_upload_files(job_id, status=None):

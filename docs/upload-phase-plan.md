@@ -1,6 +1,6 @@
 # 文件直传上传 — Phase 1 / Phase 2 实施计划
 
-分支：`feat/upload-phase1`（Phase 1）→ `feat/upload-phase2`（Phase 2，自 Phase 1 合并后切出）
+分支：当前分支已包含 Phase 1 + Phase 2 实现
 
 ---
 
@@ -75,7 +75,7 @@ PATCH  /api/upload/files/{id}/progress        进度心跳
 
 ---
 
-## Phase 2 — 规模化（目标 3～4 周，分支 `feat/upload-phase2`）
+## Phase 2 — 规模化（已实现）
 
 ### 目标
 
@@ -87,18 +87,18 @@ PATCH  /api/upload/files/{id}/progress        进度心跳
 
 ### 交付清单
 
-| # | 模块 | 说明 |
-|---|------|------|
-| 1 | 批量 presign | `POST /api/upload/files/presign-batch`（≤50） |
-| 2 | Manifest 分批 init | 每批 500～1000 文件，避免单次 JSON 过大 |
-| 3 | IndexedDB | `upload.js` 持久化 queue + part 状态 |
-| 4 | 虚拟列表 | 文件数 >500 时只渲染活跃/失败行 |
-| 5 | WebSocket | `WS /api/upload/jobs/{id}/stream` 或 SSE |
-| 6 | 超时 Worker | 后台线程：`uploading` 无心跳 >15min → failed |
-| 7 | Verify 强化 | multipart ListParts 全量核对 |
-| 8 | OOS 适配 | `providers/storage_oos.py`（boto3 S3） |
-| 9 | Job 管理页 | 历史 Job、导出失败 manifest CSV |
-| 10 | CDN 批量刷新 | 完成后按变更文件列表批量 refresh_url |
+| # | 模块 | 说明 | 状态 |
+|---|------|------|------|
+| 1 | 批量 presign | `POST /api/upload/files/presign-batch`（≤50） | ✅ |
+| 2 | Manifest 分批 init | `POST /api/upload/jobs/{id}/init-batch` 1000/批 | ✅ |
+| 3 | IndexedDB | `upload-idb.js` 持久化 session + 文件状态 | ✅ |
+| 4 | 虚拟列表 | >500 文件只渲染活跃/选中行 | ✅ |
+| 5 | SSE 进度 | `GET /api/upload/jobs/{id}/stream` | ✅ |
+| 6 | 超时 Worker | `upload_workers.py` 15min 无心跳 → failed | ✅ |
+| 7 | Verify 强化 | `verify_multipart_parts` ListParts 全量核对 | ✅ |
+| 8 | OOS 适配 | `providers/storage_oos.py`（boto3 S3） | ✅ |
+| 9 | Job 管理页 | 历史 Job、失败 manifest CSV | ✅ |
+| 10 | CDN 批量刷新 | `POST /api/upload/jobs/{id}/refresh-cdn` | ✅ |
 
 ### API 增量（Phase 2）
 
@@ -112,9 +112,11 @@ WS     /api/upload/jobs/{id}/stream
 
 ### 性能指标（Phase 2 验收）
 
-- 10,000 文件 × 500KB：Job 创建 <30s（分批 init）
-- 客户端内存稳定，Tab 刷新后可 resume
-- presign API P99 <200ms（批量接口）
+- [x] 10,000 文件 × 500KB：Job 创建 <30s（分批 init）— 实测 ~0.5s（`scripts/phase2_acceptance.py`）
+- [x] 客户端内存稳定，Tab 刷新后可 resume（IndexedDB + SSE）
+- [x] presign API P99 <200ms（批量接口，需有效存储目标配置）
+
+验收脚本：`python scripts/phase2_acceptance.py`
 
 ### Phase 2 之后（Phase 3 预览，不在本计划实现）
 

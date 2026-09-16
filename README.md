@@ -104,6 +104,14 @@ APP_PORT=8080 python app.py
 
 默认账号：`admin / admin123`
 
+### Phase 2 上传验收
+
+```bash
+python scripts/phase2_acceptance.py
+```
+
+验证 10,000 文件分批 Job 创建耗时、Job 列表与批量 presign 接口（需已配置有效存储目标）。
+
 ## 项目结构
 
 ```

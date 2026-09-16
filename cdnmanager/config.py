@@ -6,3 +6,4 @@ EXTERNAL_API_SECRET = 'cdn_manager_external_secret'
 APP_PORT = 80
 PERMANENT_SESSION_LIFETIME = timedelta(hours=10)
 ENABLE_TASK_POLLING = True
+ENABLE_UPLOAD_TIMEOUT_SCAN = os.environ.get('ENABLE_UPLOAD_TIMEOUT_SCAN', 'true').lower() in ('1', 'true', 'yes')
