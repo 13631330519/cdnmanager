@@ -11,7 +11,26 @@ URL_FILE = os.path.join(DATA_DIR, 'urls.json')
 LOG_DIR = os.environ.get('LOG_DIR', 'logs')
 
 VALID_PROVIDERS = ['alicdn', 'tencent', 'lingzhi', 'akamai', 'ctyun', 'volcengine', 'x7host']
+STORAGE_PROVIDERS = ['oss', 'cos']
 DNS_PROVIDERS = ['aliyun', 'tencent']
+
+# 直传上传：超过此大小走分片（100MB）
+UPLOAD_MULTIPART_THRESHOLD = 100 * 1024 * 1024
+UPLOAD_PART_SIZE = 8 * 1024 * 1024
+UPLOAD_PRESIGN_EXPIRES = 3600
+
+UPLOAD_JOB_PENDING = 'pending'
+UPLOAD_JOB_RUNNING = 'running'
+UPLOAD_JOB_COMPLETED = 'completed'
+UPLOAD_JOB_PARTIAL = 'partial'
+UPLOAD_JOB_FAILED = 'failed'
+UPLOAD_JOB_CANCELLED = 'cancelled'
+
+UPLOAD_FILE_PENDING = 'pending'
+UPLOAD_FILE_UPLOADING = 'uploading'
+UPLOAD_FILE_VERIFYING = 'verifying'
+UPLOAD_FILE_COMPLETED = 'completed'
+UPLOAD_FILE_FAILED = 'failed'
 USER_ROLES = ['admin', 'domain_admin', 'user']
 USER_ROLE_LABELS = {
     'admin': '管理员',
@@ -43,6 +62,22 @@ PROVIDER_LABELS = {
 DNS_PROVIDER_LABELS = {
     'aliyun': '阿里云 DNS',
     'tencent': '腾讯云 DNSPod',
+}
+
+STORAGE_PROVIDER_LABELS = {
+    'oss': '阿里云 OSS',
+    'cos': '腾讯云 COS',
+}
+
+STORAGE_CREDENTIAL_FIELD_LABELS = {
+    'oss': [
+        {'name': 'access_key', 'label': 'AccessKey ID', 'type': 'text'},
+        {'name': 'secret_key', 'label': 'AccessKey Secret', 'type': 'password'},
+    ],
+    'cos': [
+        {'name': 'access_key', 'label': 'SecretId', 'type': 'text'},
+        {'name': 'secret_key', 'label': 'SecretKey', 'type': 'password'},
+    ],
 }
 
 DNS_CREDENTIAL_FIELD_LABELS = {

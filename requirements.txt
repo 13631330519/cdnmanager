@@ -6,3 +6,5 @@ gunicorn==22.0.0
 alibabacloud-tea>=0.3.9
 alibabacloud_tea_openapi>=0.3.12
 alibabacloud_alidns20150109>=3.4.7
+oss2>=2.18.0
+cos-python-sdk-v5>=1.9.30

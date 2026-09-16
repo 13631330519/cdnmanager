@@ -1,0 +1,64 @@
+<div id="tab-storage-targets" class="tab-panel hidden">
+    <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+        <h2 class="text-xl font-semibold mb-4 text-gray-800">添加存储目标</h2>
+        <form id="storageTargetForm" class="grid gap-4 md:grid-cols-3">
+            <input type="hidden" name="target_id" id="storageTargetId" value="">
+            <input type="text" name="name" placeholder="目标名称" class="px-3 py-2 border rounded focus:ring-2 focus:ring-indigo-500" required>
+            <select name="provider" id="storageTargetProvider" class="px-3 py-2 border rounded focus:ring-2 focus:ring-indigo-500" required>
+                <option value="">存储类型</option>
+                <option value="oss">阿里云 OSS</option>
+                <option value="cos">腾讯云 COS</option>
+            </select>
+            <select name="credential_id" id="storageTargetCredential" class="px-3 py-2 border rounded focus:ring-2 focus:ring-indigo-500" required>
+                <option value="">选择凭据</option>
+            </select>
+            <input type="text" name="bucket" placeholder="Bucket 名称" class="px-3 py-2 border rounded focus:ring-2 focus:ring-indigo-500" required>
+            <input type="text" name="region" placeholder="Region（如 oss-cn-hangzhou / ap-guangzhou）" class="px-3 py-2 border rounded focus:ring-2 focus:ring-indigo-500" required>
+            <input type="text" name="base_path" placeholder="基础路径（可选）" class="px-3 py-2 border rounded focus:ring-2 focus:ring-indigo-500">
+            <input type="text" name="public_base_url" placeholder="公开访问 URL 前缀（刷新 CDN 用）" class="px-3 py-2 border rounded focus:ring-2 focus:ring-indigo-500">
+            <input type="text" name="endpoint" placeholder="自定义 Endpoint（可选）" class="px-3 py-2 border rounded focus:ring-2 focus:ring-indigo-500">
+            <input type="text" name="cdn_domain" placeholder="绑定 CDN 域名（可选）" class="px-3 py-2 border rounded focus:ring-2 focus:ring-indigo-500">
+            <div class="md:col-span-3">
+                <button type="submit" class="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded transition">保存存储目标</button>
+            </div>
+        </form>
+        <div id="storageTargetResult" class="mt-3 text-sm hidden"></div>
+    </div>
+
+    <div class="bg-white rounded-lg shadow-md p-6">
+        <h2 class="text-xl font-semibold mb-4 text-gray-800">已配置存储目标</h2>
+        {% if storage_targets %}
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200 text-sm">
+                <thead>
+                    <tr>
+                        <th class="px-4 py-2 text-left text-gray-500">名称</th>
+                        <th class="px-4 py-2 text-left text-gray-500">类型</th>
+                        <th class="px-4 py-2 text-left text-gray-500">Bucket</th>
+                        <th class="px-4 py-2 text-left text-gray-500">Region</th>
+                        <th class="px-4 py-2 text-left text-gray-500">CDN 域名</th>
+                        <th class="px-4 py-2 text-left text-gray-500">操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in storage_targets %}
+                    {% set cfg = item.target_config if item.target_config is mapping else {} %}
+                    <tr class="border-t hover:bg-gray-50">
+                        <td class="px-4 py-3">{{ item.name }}</td>
+                        <td class="px-4 py-3">{{ storage_provider_labels.get(item.provider, item.provider) }}</td>
+                        <td class="px-4 py-3">{{ cfg.get('bucket', '-') }}</td>
+                        <td class="px-4 py-3">{{ cfg.get('region', '-') }}</td>
+                        <td class="px-4 py-3">{{ item.cdn_domain or '-' }}</td>
+                        <td class="px-4 py-3">
+                            <button type="button" class="delete-storage-target-btn bg-red-500 hover:bg-red-600 text-white px-2 py-1 rounded text-xs" data-target-id="{{ item.id }}">删除</button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-gray-500">暂无存储目标。</p>
+        {% endif %}
+    </div>
+</div>

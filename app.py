@@ -3,14 +3,36 @@ from datetime import datetime
 from flask import Flask, render_template, request, redirect, url_for, session, flash
 from werkzeug.security import check_password_hash
 
-from common import REFRESH_STATUS_REFRESHING, VALID_PROVIDERS, PROVIDER_LABELS, CREDENTIAL_FIELD_LABELS, DNS_PROVIDER_LABELS, DNS_CREDENTIAL_FIELD_LABELS, USER_ROLE_LABELS
+from common import (
+    REFRESH_STATUS_REFRESHING,
+    VALID_PROVIDERS,
+    PROVIDER_LABELS,
+    CREDENTIAL_FIELD_LABELS,
+    DNS_PROVIDER_LABELS,
+    DNS_CREDENTIAL_FIELD_LABELS,
+    USER_ROLE_LABELS,
+    STORAGE_PROVIDER_LABELS,
+    STORAGE_CREDENTIAL_FIELD_LABELS,
+)
 from config import SECRET_KEY, EXTERNAL_API_SECRET, APP_PORT, PERMANENT_SESSION_LIFETIME, ENABLE_TASK_POLLING
 from credentials import credential_bp
 from dns_credentials import dns_credential_bp
 from domains import get_visible_domains, domain_bp, start_task_polling_thread
 from external_api import external_bp
-from models import ensure_database, load_urls, load_users, load_credentials, load_dns_credentials, load_root_domains
+from models import (
+    ensure_database,
+    load_urls,
+    load_users,
+    load_credentials,
+    load_dns_credentials,
+    load_root_domains,
+    load_storage_credentials,
+    load_storage_targets,
+)
 from root_domains import root_domain_bp
+from storage_credentials import storage_credential_bp
+from storage_targets import storage_target_bp
+from uploads import upload_bp
 from users import user_bp
 
 app = Flask(__name__)
@@ -34,6 +56,9 @@ app.register_blueprint(dns_credential_bp)
 app.register_blueprint(root_domain_bp)
 app.register_blueprint(user_bp)
 app.register_blueprint(external_bp)
+app.register_blueprint(storage_credential_bp)
+app.register_blueprint(storage_target_bp)
+app.register_blueprint(upload_bp)
 
 if ENABLE_TASK_POLLING:
     start_task_polling_thread()
@@ -74,6 +99,12 @@ def index():
     }
     provider_credentials_json = json.dumps(credentials, ensure_ascii=False)
     dns_credentials_json = json.dumps(dns_credentials, ensure_ascii=False)
+    storage_credentials = load_storage_credentials()
+    storage_targets = load_storage_targets()
+    storage_credentials_json = json.dumps({
+        provider: [{'id': cred['id'], 'name': cred['name']} for cred in items]
+        for provider, items in storage_credentials.items()
+    }, ensure_ascii=False)
     urls = load_urls()
     indices = get_urls_with_refreshing(urls) if isinstance(urls, list) else []
     latest_urls = [dict(urls[i], _idx=urls[i]['id']) for i in reversed(indices)] if indices else []
@@ -96,6 +127,11 @@ def index():
         all_usernames=all_usernames,
         latest_urls=latest_urls,
         user_role_labels=USER_ROLE_LABELS,
+        storage_credentials=storage_credentials,
+        storage_targets=storage_targets,
+        storage_provider_labels=STORAGE_PROVIDER_LABELS,
+        storage_credential_field_labels=STORAGE_CREDENTIAL_FIELD_LABELS,
+        storage_credentials_json=storage_credentials_json,
     )
 
 @app.route('/login', methods=['GET', 'POST'])
