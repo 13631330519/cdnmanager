@@ -1,6 +1,8 @@
 import uuid
 from datetime import datetime
 
+import logging
+
 from flask import Blueprint, jsonify, request, session
 
 from common import (
@@ -16,6 +18,8 @@ from common import (
 from credentials import get_credential
 from domains import find_bound_domain, record_refresh_submission
 from models import (
+    cleanup_finished_upload_job,
+    delete_upload_job_cascade,
     count_upload_files,
     get_storage_credential,
     get_storage_target,
@@ -39,16 +43,26 @@ from providers.lingzhi import refresh_lingzhi
 from providers.storage_service import (
     build_object_key,
     build_public_url,
+    ensure_browser_cors,
     get_adapter,
     part_size_for,
     total_parts_for,
     uses_multipart,
 )
+
+logger = logging.getLogger(__name__)
 from providers.tencent import refresh_tencentcdn
 from providers.volcengine import refresh_volcengine
 from providers.x7host import refresh_x7host
 
 upload_bp = Blueprint('upload_bp', __name__)
+
+
+def _maybe_cleanup_job(job_id):
+    try:
+        cleanup_finished_upload_job(job_id)
+    except Exception as exc:
+        logger.warning('清理上传 Job 失败 %s: %s', job_id, exc)
 
 
 def _require_login():
@@ -249,16 +263,23 @@ def start_upload_file(file_id):
     mime = file_record.get('mime')
     file_size = file_record['size']
 
+    origin = request.headers.get('Origin')
+    cors_origins = [origin] if origin else ['*']
+    try:
+        ensure_browser_cors(adapter, credential, config, cors_origins)
+    except Exception as exc:
+        logger.warning('自动配置存储 CORS 失败（请手动在控制台配置）: %s', exc)
+
     if uses_multipart(file_size):
         upload_id, parts, total_parts = adapter.init_multipart(
             credential, config, object_key, file_size, mime=mime,
         )
         part_rows = []
-        for part in parts:
+        for part_number in range(1, total_parts + 1):
             part_rows.append({
                 'file_id': file_id,
-                'part_number': part['part_number'],
-                'size': part_size_for(file_size, part['part_number'], total_parts),
+                'part_number': part_number,
+                'size': part_size_for(file_size, part_number, total_parts),
                 'etag': None,
                 'status': 'pending',
             })
@@ -279,7 +300,7 @@ def start_upload_file(file_id):
         'mode': 'put',
         'upload_url': upload_url,
         'method': 'PUT',
-        'headers': {'Content-Type': mime} if mime else {},
+        'headers': {},
     })
 
 
@@ -299,6 +320,20 @@ def presign_upload_parts(file_id):
     upload_id = file_record.get('upload_id')
     if not upload_id:
         return jsonify({'error': '尚未初始化 multipart'}), 400
+
+    file_size = file_record['size']
+    total_parts = total_parts_for(file_size)
+    end_part = min(end_part, total_parts)
+    part_rows = []
+    for part_number in range(start_part, end_part + 1):
+        part_rows.append({
+            'file_id': file_id,
+            'part_number': part_number,
+            'size': part_size_for(file_size, part_number, total_parts),
+            'etag': None,
+            'status': 'pending',
+        })
+    insert_upload_parts(part_rows)
 
     parts = adapter.presign_parts(
         credential, config, file_record['storage_key'], upload_id, start_part, end_part,
@@ -346,12 +381,27 @@ def complete_upload_file(file_id):
     etag = (data.get('etag') or '').strip().strip('"')
 
     if file_record.get('upload_id'):
+        expected_parts = total_parts_for(file_record['size'])
         parts = [
             {'part_number': p['part_number'], 'etag': p['etag']}
             for p in list_upload_parts(file_id)
             if p.get('status') == 'completed' and p.get('etag')
         ]
-        expected_parts = total_parts_for(file_record['size'])
+        if len(parts) < expected_parts and hasattr(adapter, 'list_uploaded_parts'):
+            try:
+                remote_parts = adapter.list_uploaded_parts(
+                    credential, config, file_record['storage_key'], file_record['upload_id'],
+                )
+                if len(remote_parts) >= expected_parts:
+                    for remote_part in remote_parts:
+                        update_upload_part(file_id, remote_part['part_number'], {
+                            'etag': remote_part['etag'],
+                            'status': 'completed',
+                        })
+                    parts = remote_parts[:expected_parts]
+            except Exception as exc:
+                logger.warning('从存储拉取分片列表失败: %s', exc)
+
         if len(parts) < expected_parts:
             update_upload_file(file_id, {
                 'status': UPLOAD_FILE_FAILED,
@@ -359,7 +409,11 @@ def complete_upload_file(file_id):
                 'finished_at': datetime.now().isoformat(),
             })
             recalculate_upload_job_stats(job['id'])
-            return jsonify({'success': False, 'error': '分片未完成'}), 400
+            _maybe_cleanup_job(job['id'])
+            return jsonify({
+                'success': False,
+                'error': f'分片未完成 ({len(parts)}/{expected_parts})',
+            }), 400
         try:
             etag = adapter.complete_multipart(
                 credential, config, file_record['storage_key'], file_record['upload_id'], parts,
@@ -371,6 +425,7 @@ def complete_upload_file(file_id):
                 'finished_at': datetime.now().isoformat(),
             })
             recalculate_upload_job_stats(job['id'])
+            _maybe_cleanup_job(job['id'])
             return jsonify({'success': False, 'error': str(exc)}), 400
 
     verify = adapter.verify_object(
@@ -383,6 +438,7 @@ def complete_upload_file(file_id):
             'finished_at': datetime.now().isoformat(),
         })
         recalculate_upload_job_stats(job['id'])
+        _maybe_cleanup_job(job['id'])
         return jsonify({'success': False, 'error': verify.get('error')}), 400
 
     refresh_result = None
@@ -398,6 +454,7 @@ def complete_upload_file(file_id):
         'finished_at': datetime.now().isoformat(),
     })
     recalculate_upload_job_stats(job['id'])
+    _maybe_cleanup_job(job['id'])
 
     return jsonify({
         'success': True,
@@ -405,6 +462,24 @@ def complete_upload_file(file_id):
         'public_url': public_url,
         'refresh': refresh_result,
     })
+
+
+@upload_bp.route('/api/upload/jobs/<job_id>/cleanup', methods=['POST'])
+def cleanup_upload_job_route(job_id):
+    user, err, status = _require_login()
+    if err:
+        return err, status
+    job = get_upload_job(job_id)
+    if not job:
+        return jsonify({'success': True, 'message': 'Job 已不存在'})
+    if job['username'] != user['username'] and user.get('role') != 'admin':
+        return jsonify({'error': '无权限'}), 403
+    data = request.get_json(silent=True) or {}
+    if data.get('force', True):
+        delete_upload_job_cascade(job_id)
+        return jsonify({'success': True, 'cleaned': True})
+    cleaned = cleanup_finished_upload_job(job_id)
+    return jsonify({'success': True, 'cleaned': cleaned})
 
 
 @upload_bp.route('/api/upload/files/<file_id>/progress', methods=['PATCH'])

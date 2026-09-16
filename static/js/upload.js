@@ -1,105 +1,285 @@
 (function () {
     const MULTIPART_THRESHOLD = 100 * 1024 * 1024;
     const PART_SIZE = 8 * 1024 * 1024;
-    const MAX_SMALL_CONCURRENCY = 20;
-    const MAX_LARGE_CONCURRENCY = 3;
-    const MAX_PART_CONCURRENCY = 6;
+    const MAX_SMALL_CONCURRENCY = 16;
+    const MAX_LARGE_CONCURRENCY = 2;
+    const MAX_PART_CONCURRENCY = 4;
 
-    let selectedFiles = [];
-    let activeJobId = null;
-    let cancelled = false;
+    const appRoot = document.getElementById('storageManagerApp');
+    if (!appRoot) return;
 
-    const folderInput = document.getElementById('uploadFolderInput');
-    const fileInput = document.getElementById('uploadFileInput');
-    const startBtn = document.getElementById('uploadStartBtn');
-    const cancelBtn = document.getElementById('uploadCancelBtn');
-    const summaryEl = document.getElementById('uploadSelectionSummary');
-    const progressWrap = document.getElementById('uploadProgressWrap');
-    const progressText = document.getElementById('uploadProgressText');
-    const progressPercent = document.getElementById('uploadProgressPercent');
-    const progressBar = document.getElementById('uploadProgressBar');
-    const failedList = document.getElementById('uploadFailedList');
+    const state = {
+        remotePrefix: '',
+        remoteFolders: [],
+        remoteFiles: [],
+        canDelete: false,
+        localItems: [],
+        uploading: false,
+        cancelled: false,
+        fileProgress: {},
+        doneBytes: 0,
+        totalBytes: 0,
+    };
 
-    if (!startBtn) return;
+    const els = {
+        target: document.getElementById('storageTargetSelect'),
+        remotePath: document.getElementById('remotePathInput'),
+        remoteBrowse: document.getElementById('remoteBrowseBtn'),
+        remoteUp: document.getElementById('remoteUpBtn'),
+        remoteDownload: document.getElementById('remoteDownloadBtn'),
+        remoteDelete: document.getElementById('remoteDeleteBtn'),
+        remoteSelectAll: document.getElementById('remoteSelectAll'),
+        remoteList: document.getElementById('remoteFileList'),
+        remoteEmpty: document.getElementById('remoteEmptyHint'),
+        remoteBreadcrumb: document.getElementById('remoteBreadcrumb'),
+        localFolder: document.getElementById('localFolderInput'),
+        localFile: document.getElementById('localFileInput'),
+        localClear: document.getElementById('localClearBtn'),
+        localUpload: document.getElementById('localUploadBtn'),
+        localCancel: document.getElementById('localCancelBtn'),
+        localSelectAll: document.getElementById('localSelectAll'),
+        localList: document.getElementById('localFileList'),
+        localEmpty: document.getElementById('localEmptyHint'),
+        localSummary: document.getElementById('localSummary'),
+        refreshAfter: document.getElementById('uploadRefreshAfter'),
+        globalWrap: document.getElementById('globalProgressWrap'),
+        globalText: document.getElementById('globalProgressText'),
+        globalPercent: document.getElementById('globalProgressPercent'),
+        globalBar: document.getElementById('globalProgressBar'),
+    };
+
+    const userRole = appRoot.dataset.userRole || 'user';
+    const canDeleteDefault = appRoot.dataset.canDeleteDefault === '1';
 
     function formatBytes(bytes) {
+        if (!bytes) return '0 B';
         if (bytes < 1024) return `${bytes} B`;
         if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
         if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
         return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
     }
 
-    function setSelectedFiles(fileList) {
-        selectedFiles = Array.from(fileList || []);
-        const totalBytes = selectedFiles.reduce((sum, file) => sum + file.size, 0);
-        summaryEl.textContent = selectedFiles.length
-            ? `已选择 ${selectedFiles.length} 个文件，共 ${formatBytes(totalBytes)}`
-            : '';
-        startBtn.disabled = selectedFiles.length === 0 || !!activeJobId;
+    function formatFetchError(err, phase) {
+        const message = err && err.message ? err.message : String(err);
+        if (message === 'Failed to fetch') {
+            return `${phase}失败：浏览器无法连接对象存储，请检查 Bucket CORS（PUT/GET/HEAD + 暴露 ETag）`;
+        }
+        return `${phase}失败：${message}`;
     }
 
-    folderInput?.addEventListener('change', (e) => setSelectedFiles(e.target.files));
-    fileInput?.addEventListener('change', (e) => setSelectedFiles(e.target.files));
-
-    cancelBtn?.addEventListener('click', () => {
-        cancelled = true;
-        cancelBtn.classList.add('hidden');
-    });
-
     async function fetchJson(url, options) {
-        const response = await fetch(url, options);
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok) {
-            throw new Error(data.error || data.message || `请求失败: ${response.status}`);
+        let response;
+        try {
+            response = await fetch(url, options);
+        } catch (err) {
+            throw new Error(formatFetchError(err, '请求'));
         }
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || data.message || `HTTP ${response.status}`);
         return data;
     }
 
-    function updateJobProgress(doneBytes, totalBytes, doneFiles, totalFiles, failedCount) {
-        const percent = totalBytes ? Math.min(100, Math.round((doneBytes / totalBytes) * 100)) : 0;
-        progressBar.style.width = `${percent}%`;
-        progressPercent.textContent = `${percent}%`;
-        progressText.textContent = `已完成 ${doneFiles}/${totalFiles} 个文件，${formatBytes(doneBytes)}/${formatBytes(totalBytes)}${failedCount ? `，失败 ${failedCount}` : ''}`;
+    function xhrPut(url, body, onProgress) {
+        return new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open('PUT', url);
+            xhr.responseType = 'text';
+            if (onProgress) {
+                xhr.upload.onprogress = (event) => {
+                    if (event.lengthComputable) onProgress(event.loaded, event.total);
+                };
+            }
+            xhr.onload = () => {
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    resolve(xhr);
+                } else {
+                    reject(new Error(`直传失败 HTTP ${xhr.status}: ${(xhr.responseText || '').slice(0, 120)}`));
+                }
+            };
+            xhr.onerror = () => reject(new Error(formatFetchError({ message: 'Failed to fetch' }, '存储直传')));
+            xhr.send(body);
+        });
     }
 
-    async function uploadPut(file, fileMeta, startData) {
-        const headers = startData.headers || {};
-        const response = await fetch(startData.upload_url, {
-            method: startData.method || 'PUT',
-            headers,
-            body: file,
+    function updateGlobalProgress() {
+        const inFlight = Object.values(state.fileProgress).reduce((sum, n) => sum + (n || 0), 0);
+        const uploaded = state.doneBytes + inFlight;
+        const total = state.totalBytes || 1;
+        const percent = Math.min(100, Math.round((uploaded / total) * 100));
+        els.globalBar.style.width = `${percent}%`;
+        els.globalPercent.textContent = `${percent}%`;
+    }
+
+    function setGlobalProgressVisible(visible) {
+        els.globalWrap.classList.toggle('hidden', !visible);
+    }
+
+    function canDeleteNow() {
+        if (canDeleteDefault) return true;
+        const opt = els.target.selectedOptions[0];
+        return opt && opt.dataset.allowUserDelete === '1';
+    }
+
+    function renderBreadcrumb() {
+        const parts = state.remotePrefix.replace(/\/+$/, '').split('/').filter(Boolean);
+        let html = `<button type="button" class="remote-crumb hover:underline" data-prefix="">根目录</button>`;
+        let acc = '';
+        parts.forEach((part) => {
+            acc = acc ? `${acc}/${part}` : part;
+            html += `<span class="text-gray-400 mx-1">/</span><button type="button" class="remote-crumb hover:underline" data-prefix="${acc}/">${part}</button>`;
         });
-        if (!response.ok) {
-            throw new Error(`直传失败: HTTP ${response.status}`);
+        els.remoteBreadcrumb.innerHTML = html;
+        els.remoteBreadcrumb.querySelectorAll('.remote-crumb').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                state.remotePrefix = btn.dataset.prefix || '';
+                els.remotePath.value = state.remotePrefix;
+                loadRemoteList();
+            });
+        });
+    }
+
+    function renderRemoteList() {
+        const hasContent = state.remoteFolders.length || state.remoteFiles.length;
+        els.remoteEmpty.classList.toggle('hidden', hasContent);
+        els.remoteList.innerHTML = '';
+
+        state.remoteFolders.forEach((folder) => {
+            const tr = document.createElement('tr');
+            tr.className = 'hover:bg-indigo-50';
+            tr.innerHTML = `
+                <td class="px-3 py-2"><input type="checkbox" class="remote-check rounded" data-type="folder" data-prefix="${folder.prefix}"></td>
+                <td class="px-3 py-2"><button type="button" class="remote-folder text-indigo-700 hover:underline text-left" data-prefix="${folder.prefix}"><i class="fas fa-folder text-amber-500 mr-2"></i>${folder.name}</button></td>
+                <td class="px-3 py-2 text-right text-gray-400">—</td>`;
+            els.remoteList.appendChild(tr);
+        });
+
+        state.remoteFiles.forEach((file) => {
+            const tr = document.createElement('tr');
+            tr.className = 'hover:bg-gray-50';
+            tr.innerHTML = `
+                <td class="px-3 py-2"><input type="checkbox" class="remote-check rounded" data-type="file" data-key="${file.key}"></td>
+                <td class="px-3 py-2 truncate max-w-[240px]" title="${file.key}"><i class="fas fa-file text-gray-400 mr-2"></i>${file.name}</td>
+                <td class="px-3 py-2 text-right text-gray-500">${formatBytes(file.size)}</td>`;
+            els.remoteList.appendChild(tr);
+        });
+
+        els.remoteDelete.classList.toggle('hidden', !state.canDelete);
+        bindRemoteEvents();
+    }
+
+    function bindRemoteEvents() {
+        els.remoteList.querySelectorAll('.remote-check').forEach((cb) => {
+            cb.addEventListener('change', updateRemoteActions);
+        });
+    }
+
+    function applyRemoteListing(data) {
+        state.canDelete = !!data.can_delete;
+        state.remoteFolders = data.folders || [];
+        state.remoteFiles = data.files || [];
+        if (typeof data.remote_prefix === 'string') {
+            state.remotePrefix = data.remote_prefix;
+            els.remotePath.value = data.remote_prefix;
         }
-        let etag = response.headers.get('ETag') || response.headers.get('etag') || '';
-        etag = etag.replace(/"/g, '');
-        await fetchJson(`/api/upload/files/${fileMeta.id}/progress`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ bytes_uploaded: file.size, status: 'uploading' }),
+        renderBreadcrumb();
+        renderRemoteList();
+        updateRemoteActions();
+    }
+
+    async function loadRemoteList() {
+        const targetId = els.target.value;
+        const prefix = els.remotePath.value.trim();
+        const data = await fetchJson(`/api/storage/list?target_id=${encodeURIComponent(targetId)}&prefix=${encodeURIComponent(prefix)}`);
+        applyRemoteListing(data);
+    }
+
+    function updateRemoteActions() {
+        const checked = els.remoteList.querySelectorAll('.remote-check:checked');
+        const has = checked.length > 0;
+        els.remoteDownload.disabled = !has;
+        els.remoteDelete.disabled = !has || !state.canDelete;
+    }
+
+    function renderLocalList() {
+        const has = state.localItems.length > 0;
+        els.localEmpty.classList.toggle('hidden', has);
+        els.localList.innerHTML = '';
+        let total = 0;
+        state.localItems.forEach((item, index) => {
+            total += item.file.size;
+            const tr = document.createElement('tr');
+            tr.className = 'hover:bg-gray-50';
+            const statusClass = item.status === 'done' ? 'text-green-600' : item.status === 'failed' ? 'text-red-600' : 'text-gray-600';
+            tr.innerHTML = `
+                <td class="px-3 py-2"><input type="checkbox" class="local-check rounded" data-index="${index}" ${item.selected ? 'checked' : ''} ${state.uploading ? 'disabled' : ''}></td>
+                <td class="px-3 py-2 truncate max-w-[200px]" title="${item.path}">${item.path}</td>
+                <td class="px-3 py-2 text-right text-gray-500">${formatBytes(item.file.size)}</td>
+                <td class="px-3 py-2">
+                    <div class="w-full bg-gray-200 rounded-full h-1.5 mb-1"><div class="local-bar bg-green-500 h-1.5 rounded-full transition-all" style="width:${item.progress || 0}%"></div></div>
+                    <span class="text-xs ${statusClass} local-status">${item.statusText || '待上传'}</span>
+                </td>`;
+            els.localList.appendChild(tr);
         });
-        return fetchJson(`/api/upload/files/${fileMeta.id}/complete`, {
+        els.localSummary.textContent = has
+            ? `已选 ${state.localItems.filter((i) => i.selected).length}/${state.localItems.length} 个，共 ${formatBytes(total)}`
+            : '未选择文件';
+        els.localUpload.disabled = !has || state.uploading || !state.localItems.some((i) => i.selected);
+
+        els.localList.querySelectorAll('.local-check').forEach((cb) => {
+            cb.addEventListener('change', () => {
+                const idx = parseInt(cb.dataset.index, 10);
+                state.localItems[idx].selected = cb.checked;
+                renderLocalList();
+            });
+        });
+    }
+
+    function addLocalFiles(fileList) {
+        Array.from(fileList || []).forEach((file) => {
+            const path = file.webkitRelativePath || file.name;
+            if (state.localItems.some((item) => item.path === path)) return;
+            state.localItems.push({
+                file,
+                path,
+                selected: true,
+                status: 'pending',
+                statusText: '待上传',
+                progress: 0,
+            });
+        });
+        renderLocalList();
+    }
+
+    function updateLocalItem(index, patch) {
+        Object.assign(state.localItems[index], patch);
+        const row = els.localList.children[index];
+        if (!row) return renderLocalList();
+        const bar = row.querySelector('.local-bar');
+        const status = row.querySelector('.local-status');
+        if (bar && patch.progress !== undefined) bar.style.width = `${patch.progress}%`;
+        if (status && patch.statusText) {
+            status.textContent = patch.statusText;
+            status.className = `text-xs local-status ${patch.status === 'failed' ? 'text-red-600' : patch.status === 'done' ? 'text-green-600' : 'text-gray-600'}`;
+        }
+    }
+
+    async function uploadPut(file, fileMeta, startData, onProgress) {
+        const xhr = await xhrPut(startData.upload_url, file, onProgress);
+        let etag = xhr.getResponseHeader('ETag') || xhr.getResponseHeader('etag') || '';
+        etag = etag.replace(/"/g, '');
+        if (!etag) throw new Error('未读取到 ETag，请在 CORS 中暴露 ETag');
+        await fetchJson(`/api/upload/files/${fileMeta.id}/complete`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ etag }),
         });
     }
 
-    async function uploadPart(url, blob) {
-        const response = await fetch(url, { method: 'PUT', body: blob });
-        if (!response.ok) {
-            throw new Error(`分片上传失败: HTTP ${response.status}`);
-        }
-        let etag = response.headers.get('ETag') || response.headers.get('etag') || '';
-        return etag.replace(/"/g, '');
-    }
-
-    async function uploadMultipart(file, fileMeta, startData) {
+    async function uploadMultipart(file, fileMeta, startData, fileKey, onProgress) {
         const totalParts = startData.total_parts;
         const partSize = startData.part_size || PART_SIZE;
-        const pendingParts = new Map(startData.parts.map((part) => [part.part_number, part.url]));
-        let nextPresign = startData.parts.length + 1;
+        const pendingParts = new Map(startData.parts.map((p) => [p.part_number, p.url]));
+        let partDoneBytes = 0;
 
         async function ensurePartUrl(partNumber) {
             if (pendingParts.has(partNumber)) return pendingParts.get(partNumber);
@@ -109,35 +289,37 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ start_part: partNumber, end_part: endPart }),
             });
-            data.parts.forEach((part) => pendingParts.set(part.part_number, part.url));
-            nextPresign = endPart + 1;
+            data.parts.forEach((p) => pendingParts.set(p.part_number, p.url));
             return pendingParts.get(partNumber);
         }
-
-        let completedBytes = 0;
-        const partNumbers = Array.from({ length: totalParts }, (_, idx) => idx + 1);
 
         async function runPart(partNumber) {
             const start = (partNumber - 1) * partSize;
             const end = Math.min(start + partSize, file.size);
             const blob = file.slice(start, end);
             const url = await ensurePartUrl(partNumber);
-            const etag = await uploadPart(url, blob);
+            const xhr = await xhrPut(url, blob, (loaded) => {
+                state.fileProgress[fileKey] = partDoneBytes + loaded;
+                onProgress(state.fileProgress[fileKey], file.size);
+                updateGlobalProgress();
+            });
+            let etag = xhr.getResponseHeader('ETag') || xhr.getResponseHeader('etag') || '';
+            etag = etag.replace(/"/g, '');
+            if (!etag) throw new Error('分片未返回 ETag');
             await fetchJson(`/api/upload/files/${fileMeta.id}/part-done`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ part_number: partNumber, etag }),
             });
-            completedBytes += blob.size;
-            await fetchJson(`/api/upload/files/${fileMeta.id}/progress`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ bytes_uploaded: completedBytes, status: 'uploading' }),
-            });
+            partDoneBytes += blob.size;
+            state.fileProgress[fileKey] = partDoneBytes;
+            onProgress(partDoneBytes, file.size);
+            updateGlobalProgress();
         }
 
+        const partNumbers = Array.from({ length: totalParts }, (_, i) => i + 1);
         await runPool(partNumbers, MAX_PART_CONCURRENCY, runPart);
-        return fetchJson(`/api/upload/files/${fileMeta.id}/complete`, {
+        await fetchJson(`/api/upload/files/${fileMeta.id}/complete`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({}),
@@ -146,120 +328,211 @@
 
     async function runPool(items, concurrency, worker) {
         const queue = [...items];
-        const runners = Array.from({ length: Math.min(concurrency, queue.length) }, async () => {
+        await Promise.all(Array.from({ length: Math.min(concurrency, queue.length) }, async () => {
             while (queue.length) {
-                if (cancelled) return;
-                const item = queue.shift();
-                await worker(item);
+                if (state.cancelled) return;
+                await worker(queue.shift());
             }
-        });
-        await Promise.all(runners);
+        }));
     }
 
-    async function uploadSingleFile(file, fileMeta) {
+    async function uploadSingleLocal(item, index, fileMeta) {
+        const fileKey = fileMeta.id;
+        state.fileProgress[fileKey] = 0;
+        updateLocalItem(index, { status: 'uploading', statusText: '上传中...', progress: 0 });
+
+        const onProgress = (loaded, total) => {
+            const percent = total ? Math.min(100, Math.round((loaded / total) * 100)) : 0;
+            updateLocalItem(index, { progress: percent, statusText: `${percent}%` });
+        };
+
         const startData = await fetchJson(`/api/upload/files/${fileMeta.id}/start`, { method: 'POST' });
         if (startData.mode === 'multipart') {
-            return uploadMultipart(file, fileMeta, startData);
+            await uploadMultipart(item.file, fileMeta, startData, fileKey, onProgress);
+        } else {
+            await uploadPut(item.file, fileMeta, startData, (loaded, total) => {
+                state.fileProgress[fileKey] = loaded;
+                onProgress(loaded, total);
+                updateGlobalProgress();
+            });
         }
-        return uploadPut(file, fileMeta, startData);
+        delete state.fileProgress[fileKey];
+        state.doneBytes += item.file.size;
+        updateLocalItem(index, { status: 'done', statusText: '完成', progress: 100 });
+        updateGlobalProgress();
     }
 
-    async function processFileBatch(files, metas, progressState) {
-        const pairs = files.map((file, index) => ({ file, meta: metas[index] }));
-        const large = pairs.filter((item) => item.file.size > MULTIPART_THRESHOLD);
-        const small = pairs.filter((item) => item.file.size <= MULTIPART_THRESHOLD);
+    async function startUpload() {
+        const selected = state.localItems.map((item, index) => ({ item, index })).filter(({ item }) => item.selected);
+        if (!selected.length || state.uploading) return;
 
-        async function handleItem(item) {
-            if (cancelled) return;
-            try {
-                await uploadSingleFile(item.file, item.meta);
-                progressState.doneFiles += 1;
-                progressState.doneBytes += item.file.size;
-            } catch (err) {
-                progressState.failedCount += 1;
-                const line = document.createElement('div');
-                line.textContent = `${item.meta.relative_path}: ${err.message}`;
-                failedList.appendChild(line);
-            }
-            updateJobProgress(
-                progressState.doneBytes,
-                progressState.totalBytes,
-                progressState.doneFiles,
-                progressState.totalFiles,
-                progressState.failedCount,
-            );
-        }
+        state.uploading = true;
+        state.cancelled = false;
+        state.doneBytes = 0;
+        state.fileProgress = {};
+        state.totalBytes = selected.reduce((sum, { item }) => sum + item.file.size, 0);
+        setGlobalProgressVisible(true);
+        els.localUpload.disabled = true;
+        els.localCancel.classList.remove('hidden');
+        els.globalText.textContent = `正在上传 0/${selected.length} 个文件...`;
+        updateGlobalProgress();
 
-        await runPool(large, MAX_LARGE_CONCURRENCY, handleItem);
-        await runPool(small, MAX_SMALL_CONCURRENCY, handleItem);
-    }
-
-    startBtn.addEventListener('click', async () => {
-        if (!selectedFiles.length) return;
-        const targetId = document.getElementById('uploadTargetSelect')?.value;
-        const remotePrefix = document.getElementById('uploadRemotePrefix')?.value || '';
-        const refreshAfter = document.getElementById('uploadRefreshAfter')?.checked;
-
-        cancelled = false;
-        activeJobId = true;
-        startBtn.disabled = true;
-        cancelBtn?.classList.remove('hidden');
-        progressWrap.classList.remove('hidden');
-        failedList.innerHTML = '';
-
-        const manifest = selectedFiles.map((file) => ({
-            relative_path: file.webkitRelativePath || file.name,
-            size: file.size,
-            mime: file.type || 'application/octet-stream',
+        const manifest = selected.map(({ item }) => ({
+            relative_path: item.path,
+            size: item.file.size,
+            mime: item.file.type || 'application/octet-stream',
         }));
 
+        let jobId = null;
         try {
             const jobData = await fetchJson('/api/upload/jobs', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    storage_target_id: targetId,
-                    remote_prefix: remotePrefix,
-                    refresh_after: refreshAfter,
+                    storage_target_id: els.target.value,
+                    remote_prefix: els.remotePath.value.trim(),
+                    refresh_after: els.refreshAfter.checked,
                     files: manifest,
                 }),
             });
+            jobId = jobData.job_id;
 
-            activeJobId = jobData.job_id;
-            const metaByPath = new Map(jobData.files.map((item) => [item.relative_path, item]));
-            const orderedMetas = manifest.map((item) => metaByPath.get(item.relative_path));
+            const large = [];
+            const small = [];
+            selected.forEach(({ item, index }, i) => {
+                const meta = jobData.files[i];
+                const entry = { item, index, meta };
+                if (item.file.size > MULTIPART_THRESHOLD) large.push(entry);
+                else small.push(entry);
+            });
 
-            const progressState = {
-                totalFiles: selectedFiles.length,
-                totalBytes: selectedFiles.reduce((sum, file) => sum + file.size, 0),
-                doneFiles: 0,
-                doneBytes: 0,
-                failedCount: 0,
-            };
-            updateJobProgress(0, progressState.totalBytes, 0, progressState.totalFiles, 0);
+            let doneCount = 0;
+            async function handleEntry(entry) {
+                if (state.cancelled) return;
+                try {
+                    await uploadSingleLocal(entry.item, entry.index, entry.meta);
+                } catch (err) {
+                    updateLocalItem(entry.index, { status: 'failed', statusText: err.message.slice(0, 80), progress: 0 });
+                }
+                doneCount += 1;
+                els.globalText.textContent = `正在上传 ${doneCount}/${selected.length} 个文件...`;
+            }
 
-            await processFileBatch(selectedFiles, orderedMetas, progressState);
+            await runPool(large, MAX_LARGE_CONCURRENCY, handleEntry);
+            await runPool(small, MAX_SMALL_CONCURRENCY, handleEntry);
 
-            const job = await fetchJson(`/api/upload/jobs/${jobData.job_id}`);
-            progressText.textContent = `Job 完成：${job.job.status}（成功 ${job.job.done_files}，失败 ${job.job.failed_files}）`;
+            const failed = state.localItems.filter((i) => i.status === 'failed').length;
+            els.globalText.textContent = failed
+                ? `上传结束：${selected.length - failed} 成功，${failed} 失败`
+                : `全部上传完成（${selected.length} 个文件）`;
+
+            if (jobId) {
+                await fetchJson(`/api/upload/jobs/${jobId}/cleanup`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ force: true }),
+                }).catch(() => {});
+            }
+            await loadRemoteList();
         } catch (err) {
-            progressText.textContent = `上传失败: ${err.message}`;
+            els.globalText.textContent = `上传失败: ${err.message}`;
+            if (jobId) {
+                await fetchJson(`/api/upload/jobs/${jobId}/cleanup`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ force: true }),
+                }).catch(() => {});
+            }
         } finally {
-            activeJobId = null;
-            startBtn.disabled = selectedFiles.length === 0;
-            cancelBtn?.classList.add('hidden');
+            state.uploading = false;
+            state.cancelled = false;
+            els.localCancel.classList.add('hidden');
+            renderLocalList();
         }
+    }
+
+    async function downloadSelectedRemote() {
+        const keys = [];
+        els.remoteList.querySelectorAll('.remote-check:checked').forEach((cb) => {
+            if (cb.dataset.type === 'file') keys.push(cb.dataset.key);
+        });
+        if (!keys.length) return;
+        const data = await fetchJson('/api/storage/download-urls', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ target_id: els.target.value, keys }),
+        });
+        data.urls.forEach(({ url }) => {
+            window.open(url, '_blank');
+        });
+    }
+
+    async function deleteSelectedRemote() {
+        const keys = [];
+        const prefixes = [];
+        els.remoteList.querySelectorAll('.remote-check:checked').forEach((cb) => {
+            if (cb.dataset.type === 'file') keys.push(cb.dataset.key);
+            if (cb.dataset.type === 'folder') prefixes.push(cb.dataset.prefix);
+        });
+        if (!keys.length && !prefixes.length) return;
+        if (!confirm(`确认删除 ${keys.length} 个文件${prefixes.length ? ` 和 ${prefixes.length} 个文件夹` : ''}？`)) return;
+        await fetchJson('/api/storage/delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ target_id: els.target.value, keys, prefixes }),
+        });
+        await loadRemoteList();
+    }
+
+    els.remoteBrowse?.addEventListener('click', () => loadRemoteList());
+    els.target?.addEventListener('change', () => loadRemoteList());
+    els.remoteUp?.addEventListener('click', () => {
+        const parts = els.remotePath.value.replace(/\/+$/, '').split('/').filter(Boolean);
+        parts.pop();
+        els.remotePath.value = parts.length ? `${parts.join('/')}/` : '';
+        loadRemoteList();
+    });
+    els.remoteDownload?.addEventListener('click', () => downloadSelectedRemote().catch((e) => alert(e.message)));
+    els.remoteDelete?.addEventListener('click', () => deleteSelectedRemote().catch((e) => alert(e.message)));
+    els.remoteSelectAll?.addEventListener('change', () => {
+        els.remoteList.querySelectorAll('.remote-check').forEach((cb) => { cb.checked = els.remoteSelectAll.checked; });
+        updateRemoteActions();
     });
 
+    els.localFolder?.addEventListener('change', (e) => addLocalFiles(e.target.files));
+    els.localFile?.addEventListener('change', (e) => addLocalFiles(e.target.files));
+    els.localClear?.addEventListener('click', () => {
+        if (state.uploading) return;
+        state.localItems = [];
+        renderLocalList();
+    });
+    els.localUpload?.addEventListener('click', () => startUpload());
+    els.localCancel?.addEventListener('click', () => { state.cancelled = true; });
+    els.localSelectAll?.addEventListener('change', () => {
+        state.localItems.forEach((item) => { item.selected = els.localSelectAll.checked; });
+        renderLocalList();
+    });
+
+    // Fix folder navigation - use relative path from remotePath
+    els.remoteList.addEventListener('click', (e) => {
+        const btn = e.target.closest('.remote-folder');
+        if (!btn) return;
+        e.preventDefault();
+        const folder = state.remoteFolders.find((f) => f.prefix === btn.dataset.prefix);
+        if (!folder) return;
+        // folder.prefix is full storage key prefix; compute relative path after base by using listing remote_prefix
+        const current = (els.remotePath.value || '').replace(/\/+$/, '');
+        els.remotePath.value = current ? `${current}/${folder.name}/` : `${folder.name}/`;
+        loadRemoteList();
+    });
+
+    // --- storage admin forms (unchanged) ---
     document.querySelectorAll('.save-storage-credential-form').forEach((form) => {
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
             const resultDiv = form.querySelector('.storage-credential-result');
             resultDiv.classList.add('hidden');
-            const response = await fetch('/save_storage_credential', {
-                method: 'POST',
-                body: new URLSearchParams(new FormData(form)),
-            });
+            const response = await fetch('/save_storage_credential', { method: 'POST', body: new URLSearchParams(new FormData(form)) });
             const data = await response.json();
             resultDiv.textContent = data.success ? data.message : data.error;
             resultDiv.classList.remove('hidden');
@@ -274,10 +547,7 @@
             if (!confirm('确认删除该存储凭据？')) return;
             const response = await fetch('/delete_storage_credential', {
                 method: 'POST',
-                body: new URLSearchParams({
-                    provider: btn.dataset.provider,
-                    credential_id: btn.dataset.credentialId,
-                }),
+                body: new URLSearchParams({ provider: btn.dataset.provider, credential_id: btn.dataset.credentialId }),
             });
             const data = await response.json();
             if (data.success) location.reload();
@@ -289,23 +559,16 @@
     const storageTargetProvider = document.getElementById('storageTargetProvider');
     const storageTargetCredential = document.getElementById('storageTargetCredential');
     const storageCredentialsEl = document.getElementById('storage-credentials');
-    const storageCredentials = storageCredentialsEl
-        ? JSON.parse(storageCredentialsEl.textContent)
-        : {};
+    const storageCredentials = storageCredentialsEl ? JSON.parse(storageCredentialsEl.textContent) : {};
 
     function updateStorageTargetCredentialOptions() {
         if (!storageTargetProvider || !storageTargetCredential) return;
-        const provider = storageTargetProvider.value;
-        const creds = storageCredentials[provider] || [];
+        const creds = storageCredentials[storageTargetProvider.value] || [];
         storageTargetCredential.innerHTML = '<option value="">选择凭据</option>';
         creds.forEach((cred) => {
-            storageTargetCredential.insertAdjacentHTML(
-                'beforeend',
-                `<option value="${cred.id}">${cred.name} (${cred.id})</option>`,
-            );
+            storageTargetCredential.insertAdjacentHTML('beforeend', `<option value="${cred.id}">${cred.name} (${cred.id})</option>`);
         });
     }
-
     storageTargetProvider?.addEventListener('change', updateStorageTargetCredentialOptions);
     updateStorageTargetCredentialOptions();
 
@@ -313,12 +576,9 @@
         e.preventDefault();
         const resultDiv = document.getElementById('storageTargetResult');
         resultDiv.classList.add('hidden');
-        const response = await fetch('/save_storage_target', {
-            method: 'POST',
-            body: new URLSearchParams(new FormData(storageTargetForm)),
-        });
+        const response = await fetch('/save_storage_target', { method: 'POST', body: new URLSearchParams(new FormData(storageTargetForm)) });
         const data = await response.json();
-        resultDiv.textContent = data.success ? data.message : data.error;
+        resultDiv.textContent = data.success ? (data.cors_warning ? `${data.message}（${data.cors_warning}）` : data.message) : data.error;
         resultDiv.classList.remove('hidden');
         resultDiv.classList.toggle('text-green-600', !!data.success);
         resultDiv.classList.toggle('text-red-600', !data.success);
@@ -337,4 +597,6 @@
             else alert(data.error || '删除失败');
         });
     });
+
+    loadRemoteList().catch(() => {});
 })();

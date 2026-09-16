@@ -49,6 +49,17 @@ def can_edit_domain_provider(role):
 
 def can_manage_all_domains(role):
     return role in ('admin', 'domain_admin')
+
+
+def can_storage_delete(user, storage_target=None):
+    if not user:
+        return False
+    role = user.get('role')
+    if role in ('admin', 'domain_admin'):
+        return True
+    if storage_target and storage_target.get('allow_user_delete'):
+        return True
+    return False
 PROVIDER_LABELS = {
     'alicdn': '阿里云CDN',
     'tencent': '腾讯云CDN',

@@ -30,6 +30,7 @@ from models import (
     load_storage_targets,
 )
 from root_domains import root_domain_bp
+from storage_browser import storage_browser_bp
 from storage_credentials import storage_credential_bp
 from storage_targets import storage_target_bp
 from uploads import upload_bp
@@ -58,6 +59,7 @@ app.register_blueprint(user_bp)
 app.register_blueprint(external_bp)
 app.register_blueprint(storage_credential_bp)
 app.register_blueprint(storage_target_bp)
+app.register_blueprint(storage_browser_bp)
 app.register_blueprint(upload_bp)
 
 if ENABLE_TASK_POLLING:

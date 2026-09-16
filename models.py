@@ -193,6 +193,7 @@ def migrate_schema(conn):
         )
         '''
     )
+    _ensure_column(conn, 'storage_targets', 'allow_user_delete', 'INTEGER DEFAULT 0')
     conn.execute(
         '''
         CREATE TABLE IF NOT EXISTS upload_parts (
@@ -871,7 +872,8 @@ def delete_storage_credential(provider, credential_id):
 def load_storage_targets():
     return query_all(
         '''
-        SELECT id, name, provider, credential_id, target_config, cdn_domain, created_at, updated_at
+        SELECT id, name, provider, credential_id, target_config, cdn_domain,
+               allow_user_delete, created_at, updated_at
         FROM storage_targets ORDER BY name
         '''
     )
@@ -880,7 +882,8 @@ def load_storage_targets():
 def get_storage_target(target_id):
     return query_one(
         '''
-        SELECT id, name, provider, credential_id, target_config, cdn_domain, created_at, updated_at
+        SELECT id, name, provider, credential_id, target_config, cdn_domain,
+               allow_user_delete, created_at, updated_at
         FROM storage_targets WHERE id = ?
         ''',
         (target_id,),
@@ -892,8 +895,9 @@ def upsert_storage_target(item):
         conn.execute(
             '''
             INSERT OR REPLACE INTO storage_targets
-            (id, name, provider, credential_id, target_config, cdn_domain, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            (id, name, provider, credential_id, target_config, cdn_domain,
+             allow_user_delete, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''',
             (
                 item.get('id'),
@@ -902,6 +906,7 @@ def upsert_storage_target(item):
                 item.get('credential_id'),
                 json.dumps(item.get('target_config') or {}, ensure_ascii=False),
                 item.get('cdn_domain'),
+                1 if item.get('allow_user_delete') else 0,
                 item.get('created_at'),
                 item.get('updated_at'),
             ),
@@ -1158,3 +1163,32 @@ def recalculate_upload_job_stats(job_id):
         )
 
     run_write(work)
+
+
+def delete_upload_job_cascade(job_id):
+    def work(conn):
+        file_rows = conn.execute(
+            'SELECT id FROM upload_files WHERE job_id = ?',
+            (job_id,),
+        ).fetchall()
+        for row in file_rows:
+            conn.execute('DELETE FROM upload_parts WHERE file_id = ?', (row['id'],))
+        conn.execute('DELETE FROM upload_files WHERE job_id = ?', (job_id,))
+        conn.execute('DELETE FROM upload_jobs WHERE id = ?', (job_id,))
+
+    run_write(work)
+
+
+def cleanup_finished_upload_job(job_id):
+    job = get_upload_job(job_id)
+    if not job:
+        return False
+    if job.get('status') not in {'completed', 'partial', 'failed', 'cancelled'}:
+        return False
+    active = count_upload_files(job_id, status='uploading')
+    active += count_upload_files(job_id, status='verifying')
+    active += count_upload_files(job_id, status='pending')
+    if active > 0:
+        return False
+    delete_upload_job_cascade(job_id)
+    return True

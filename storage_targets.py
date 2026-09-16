@@ -12,6 +12,7 @@ from models import (
     get_user,
     upsert_storage_target,
 )
+from providers.storage_service import ensure_browser_cors, get_adapter
 
 storage_target_bp = Blueprint('storage_target_bp', __name__)
 
@@ -52,6 +53,7 @@ def save_storage_target_route():
     public_base_url = request.form.get('public_base_url', '').strip()
     endpoint = request.form.get('endpoint', '').strip()
     cdn_domain = request.form.get('cdn_domain', '').strip() or None
+    allow_user_delete = request.form.get('allow_user_delete') == '1'
 
     if provider not in STORAGE_PROVIDERS:
         return jsonify({'error': '不支持的存储类型'}), 400
@@ -76,11 +78,29 @@ def save_storage_target_route():
             'endpoint': endpoint,
         },
         'cdn_domain': cdn_domain,
+        'allow_user_delete': allow_user_delete,
         'created_at': existing.get('created_at') if existing else datetime.now().isoformat(),
         'updated_at': datetime.now().isoformat(),
     })
     message = '存储目标已更新' if existing else '存储目标已添加'
-    return jsonify({'success': True, 'message': message, 'target_id': target_id})
+    cors_warning = None
+    try:
+        adapter = get_adapter(provider)
+        ensure_browser_cors(adapter, credential, {
+            'bucket': bucket,
+            'region': region,
+            'base_path': base_path,
+            'public_base_url': public_base_url,
+            'endpoint': endpoint,
+        }, ['*'])
+        message += '，已尝试配置 Bucket CORS'
+    except Exception as exc:
+        cors_warning = f'Bucket CORS 自动配置失败，请手动配置：{exc}'
+
+    payload = {'success': True, 'message': message, 'target_id': target_id}
+    if cors_warning:
+        payload['cors_warning'] = cors_warning
+    return jsonify(payload)
 
 
 @storage_target_bp.route('/delete_storage_target', methods=['POST'])

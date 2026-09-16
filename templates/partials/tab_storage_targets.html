@@ -18,6 +18,10 @@
             <input type="text" name="public_base_url" placeholder="公开访问 URL 前缀（刷新 CDN 用）" class="px-3 py-2 border rounded focus:ring-2 focus:ring-indigo-500">
             <input type="text" name="endpoint" placeholder="自定义 Endpoint（可选）" class="px-3 py-2 border rounded focus:ring-2 focus:ring-indigo-500">
             <input type="text" name="cdn_domain" placeholder="绑定 CDN 域名（可选）" class="px-3 py-2 border rounded focus:ring-2 focus:ring-indigo-500">
+            <label class="flex items-center gap-2 text-sm text-gray-600 md:col-span-3">
+                <input type="checkbox" name="allow_user_delete" value="1" class="rounded border-gray-300 text-indigo-600">
+                <span>允许普通用户删除此目标下的文件/文件夹（管理员与域名管理员始终可删）</span>
+            </label>
             <div class="md:col-span-3">
                 <button type="submit" class="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded transition">保存存储目标</button>
             </div>
@@ -37,6 +41,7 @@
                         <th class="px-4 py-2 text-left text-gray-500">Bucket</th>
                         <th class="px-4 py-2 text-left text-gray-500">Region</th>
                         <th class="px-4 py-2 text-left text-gray-500">CDN 域名</th>
+                        <th class="px-4 py-2 text-left text-gray-500">用户可删</th>
                         <th class="px-4 py-2 text-left text-gray-500">操作</th>
                     </tr>
                 </thead>
@@ -49,6 +54,7 @@
                         <td class="px-4 py-3">{{ cfg.get('bucket', '-') }}</td>
                         <td class="px-4 py-3">{{ cfg.get('region', '-') }}</td>
                         <td class="px-4 py-3">{{ item.cdn_domain or '-' }}</td>
+                        <td class="px-4 py-3">{{ '是' if item.allow_user_delete else '否' }}</td>
                         <td class="px-4 py-3">
                             <button type="button" class="delete-storage-target-btn bg-red-500 hover:bg-red-600 text-white px-2 py-1 rounded text-xs" data-target-id="{{ item.id }}">删除</button>
                         </td>

@@ -20,11 +20,22 @@ def _bucket_client(credential, config):
 
 def presign_put(credential, config, object_key, mime=None):
     bucket = _bucket_client(credential, config)
-    headers = {}
-    if mime:
-        headers['Content-Type'] = mime
-    url = bucket.sign_url('PUT', object_key, UPLOAD_PRESIGN_EXPIRES, headers=headers)
+    # 浏览器直传不在签名中绑定 Content-Type，减少 CORS 预检复杂度
+    url = bucket.sign_url('PUT', object_key, UPLOAD_PRESIGN_EXPIRES)
     return url.replace('http://', 'https://') if url.startswith('http://') else url
+
+
+def ensure_browser_cors(credential, config, allowed_origins=None):
+    bucket = _bucket_client(credential, config)
+    origins = allowed_origins or ['*']
+    rule = oss2.models.CorsRule(
+        allowed_origins=origins,
+        allowed_methods=['GET', 'PUT', 'POST', 'HEAD', 'DELETE'],
+        allowed_headers=['*'],
+        expose_headers=['ETag', 'x-oss-request-id', 'Content-Length'],
+        max_age_seconds=3600,
+    )
+    bucket.put_bucket_cors(oss2.models.BucketCors([rule]))
 
 
 def init_multipart(credential, config, object_key, file_size, mime=None):
@@ -54,6 +65,18 @@ def presign_parts(credential, config, object_key, upload_id, start_part, end_par
     return parts
 
 
+def list_uploaded_parts(credential, config, object_key, upload_id):
+    bucket = _bucket_client(credential, config)
+    result = bucket.list_parts(object_key, upload_id)
+    parts = []
+    for part in result.parts:
+        parts.append({
+            'part_number': part.part_number,
+            'etag': part.etag.strip('"') if part.etag else part.etag,
+        })
+    return sorted(parts, key=lambda item: item['part_number'])
+
+
 def complete_multipart(credential, config, object_key, upload_id, parts):
     bucket = _bucket_client(credential, config)
     part_tags = sorted(
@@ -63,6 +86,53 @@ def complete_multipart(credential, config, object_key, upload_id, parts):
     result = bucket.complete_multipart_upload(object_key, upload_id, part_tags)
     etag = getattr(result, 'etag', None)
     return etag
+
+
+def presign_get(credential, config, object_key):
+    bucket = _bucket_client(credential, config)
+    url = bucket.sign_url('GET', object_key, UPLOAD_PRESIGN_EXPIRES)
+    return url.replace('http://', 'https://') if url.startswith('http://') else url
+
+
+def list_objects(credential, config, prefix='', delimiter='/', max_keys=500):
+    bucket = _bucket_client(credential, config)
+    result = bucket.list_objects(prefix=prefix, delimiter=delimiter, max_keys=max_keys)
+    folders = []
+    files = []
+    for folder in result.prefix_list or []:
+        name = folder[len(prefix):].rstrip('/')
+        if name:
+            folders.append({'prefix': folder, 'name': name})
+    for obj in result.object_list or []:
+        if obj.key == prefix or obj.key.endswith('/'):
+            continue
+        name = obj.key[len(prefix):] if obj.key.startswith(prefix) else obj.key
+        if not name or '/' in name.rstrip('/'):
+            continue
+        files.append({
+            'key': obj.key,
+            'name': name,
+            'size': obj.size,
+            'last_modified': obj.last_modified,
+        })
+    return {'prefix': prefix, 'folders': folders, 'files': files}
+
+
+def delete_objects(credential, config, object_keys):
+    bucket = _bucket_client(credential, config)
+    if not object_keys:
+        return 0
+    bucket.batch_delete_objects(list(object_keys))
+    return len(object_keys)
+
+
+def delete_prefix(credential, config, prefix):
+    bucket = _bucket_client(credential, config)
+    deleted = 0
+    for obj in oss2.ObjectIterator(bucket, prefix=prefix):
+        bucket.delete_object(obj.key)
+        deleted += 1
+    return deleted
 
 
 def verify_object(credential, config, object_key, expected_size):

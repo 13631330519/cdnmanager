@@ -1,53 +1,128 @@
 <div id="tab-upload" class="tab-panel hidden">
-    <div class="bg-white rounded-lg shadow-md p-6 mb-6">
-        <h2 class="text-xl font-semibold mb-4 text-gray-800">文件直传</h2>
-        <p class="text-sm text-gray-600 mb-4">文件直传到对象存储（OSS/COS），不经服务器中转。大文件自动分片上传。</p>
-        {% if storage_targets %}
-        <div class="grid gap-4 md:grid-cols-2 mb-4">
-            <div>
-                <label class="block text-sm text-gray-600 mb-1">存储目标</label>
-                <select id="uploadTargetSelect" class="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-indigo-500">
-                    {% for item in storage_targets %}
-                    <option value="{{ item.id }}">{{ item.name }} ({{ storage_provider_labels.get(item.provider, item.provider) }})</option>
-                    {% endfor %}
-                </select>
+    {% if storage_targets %}
+    <div id="storageManagerApp"
+         class="space-y-4"
+         data-user-role="{{ user.role }}"
+         data-can-delete-default="{{ '1' if user.role in ['admin', 'domain_admin'] else '0' }}">
+        <div class="bg-white rounded-xl shadow-md p-4 md:p-5">
+            <div class="flex flex-col lg:flex-row lg:items-end gap-4">
+                <div class="flex-grow">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">存储目标</label>
+                    <select id="storageTargetSelect" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500">
+                        {% for item in storage_targets %}
+                        <option value="{{ item.id }}"
+                                data-allow-user-delete="{{ 1 if item.allow_user_delete else 0 }}">
+                            {{ item.name }} ({{ storage_provider_labels.get(item.provider, item.provider) }})
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="flex-grow">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">当前路径</label>
+                    <div class="flex gap-2">
+                        <input type="text" id="remotePathInput" placeholder="留空=根目录，或如 2026/09/" class="flex-grow px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500">
+                        <button type="button" id="remoteBrowseBtn" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm whitespace-nowrap">
+                            <i class="fas fa-sync-alt mr-1"></i>刷新
+                        </button>
+                    </div>
+                </div>
+                <label class="flex items-center gap-2 text-sm text-gray-600 cursor-pointer pb-2">
+                    <input type="checkbox" id="uploadRefreshAfter" class="rounded border-gray-300 text-indigo-600" checked>
+                    <span>上传后刷新 CDN</span>
+                </label>
             </div>
-            <div>
-                <label class="block text-sm text-gray-600 mb-1">远程路径前缀</label>
-                <input type="text" id="uploadRemotePrefix" placeholder="如 2026/09/16/" class="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-indigo-500">
+            <div id="remoteBreadcrumb" class="mt-3 flex flex-wrap items-center gap-1 text-sm text-indigo-700"></div>
+        </div>
+
+        <div id="globalProgressWrap" class="bg-white rounded-xl shadow-md p-4 hidden">
+            <div class="flex justify-between text-sm text-gray-700 mb-2">
+                <span id="globalProgressText">准备上传...</span>
+                <span id="globalProgressPercent" class="font-semibold text-indigo-700">0%</span>
+            </div>
+            <div class="w-full bg-gray-200 rounded-full h-2.5">
+                <div id="globalProgressBar" class="bg-indigo-600 h-2.5 rounded-full transition-all duration-300" style="width:0%"></div>
             </div>
         </div>
-        <div class="flex flex-wrap items-center gap-4 mb-4">
-            <label class="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
-                <input type="checkbox" id="uploadRefreshAfter" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" checked>
-                <span>上传完成后刷新 CDN</span>
-            </label>
-            <label class="inline-flex items-center gap-2 bg-indigo-50 text-indigo-700 px-4 py-2 rounded cursor-pointer hover:bg-indigo-100 transition">
-                <i class="fas fa-folder-open"></i>
-                <span>选择文件夹</span>
-                <input type="file" id="uploadFolderInput" webkitdirectory directory multiple class="hidden">
-            </label>
-            <label class="inline-flex items-center gap-2 bg-gray-100 text-gray-700 px-4 py-2 rounded cursor-pointer hover:bg-gray-200 transition">
-                <i class="fas fa-file"></i>
-                <span>选择文件</span>
-                <input type="file" id="uploadFileInput" multiple class="hidden">
-            </label>
-            <button type="button" id="uploadStartBtn" class="bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded transition disabled:opacity-50" disabled>开始上传</button>
-            <button type="button" id="uploadCancelBtn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 px-5 py-2 rounded transition hidden">取消</button>
-        </div>
-        <div id="uploadSelectionSummary" class="text-sm text-gray-500 mb-2"></div>
-        <div id="uploadProgressWrap" class="hidden">
-            <div class="flex justify-between text-sm text-gray-600 mb-1">
-                <span id="uploadProgressText">准备中...</span>
-                <span id="uploadProgressPercent">0%</span>
+
+        <div class="grid lg:grid-cols-2 gap-4">
+            <div class="bg-white rounded-xl shadow-md flex flex-col min-h-[420px]">
+                <div class="px-4 py-3 border-b flex flex-wrap items-center justify-between gap-2">
+                    <h3 class="font-semibold text-gray-800"><i class="fas fa-cloud mr-2 text-indigo-600"></i>云端文件</h3>
+                    <div class="flex flex-wrap gap-2">
+                        <button type="button" id="remoteUpBtn" class="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg" title="上级目录">
+                            <i class="fas fa-level-up-alt"></i>
+                        </button>
+                        <button type="button" id="remoteDownloadBtn" class="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50" disabled>
+                            <i class="fas fa-download mr-1"></i>下载
+                        </button>
+                        <button type="button" id="remoteDeleteBtn" class="px-3 py-1.5 text-sm bg-red-600 hover:bg-red-700 text-white rounded-lg disabled:opacity-50 hidden" disabled>
+                            <i class="fas fa-trash-alt mr-1"></i>删除
+                        </button>
+                    </div>
+                </div>
+                <div class="px-4 py-2 bg-gray-50 text-xs text-gray-500 border-b">勾选后批量下载；有权限时可删除文件/文件夹</div>
+                <div id="remoteListWrap" class="flex-grow overflow-auto max-h-[520px]">
+                    <table class="min-w-full text-sm">
+                        <thead class="bg-gray-50 sticky top-0">
+                            <tr>
+                                <th class="px-3 py-2 w-8"><input type="checkbox" id="remoteSelectAll" class="rounded"></th>
+                                <th class="px-3 py-2 text-left text-gray-500">名称</th>
+                                <th class="px-3 py-2 text-right text-gray-500 w-24">大小</th>
+                            </tr>
+                        </thead>
+                        <tbody id="remoteFileList" class="divide-y divide-gray-100"></tbody>
+                    </table>
+                </div>
+                <div id="remoteEmptyHint" class="hidden p-8 text-center text-gray-400 text-sm">当前目录为空</div>
             </div>
-            <div class="w-full bg-gray-200 rounded-full h-3 mb-3">
-                <div id="uploadProgressBar" class="bg-indigo-600 h-3 rounded-full transition-all" style="width: 0%"></div>
+
+            <div class="bg-white rounded-xl shadow-md flex flex-col min-h-[420px]">
+                <div class="px-4 py-3 border-b flex flex-wrap items-center justify-between gap-2">
+                    <h3 class="font-semibold text-gray-800"><i class="fas fa-laptop mr-2 text-green-600"></i>本地待传</h3>
+                    <div class="flex flex-wrap gap-2">
+                        <label class="px-3 py-1.5 text-sm bg-indigo-50 text-indigo-700 rounded-lg cursor-pointer hover:bg-indigo-100">
+                            <i class="fas fa-folder-open mr-1"></i>文件夹
+                            <input type="file" id="localFolderInput" webkitdirectory directory multiple class="hidden">
+                        </label>
+                        <label class="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded-lg cursor-pointer hover:bg-gray-200">
+                            <i class="fas fa-file mr-1"></i>文件
+                            <input type="file" id="localFileInput" multiple class="hidden">
+                        </label>
+                        <button type="button" id="localClearBtn" class="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg">清空</button>
+                        <button type="button" id="localUploadBtn" class="px-3 py-1.5 text-sm bg-green-600 hover:bg-green-700 text-white rounded-lg disabled:opacity-50" disabled>
+                            <i class="fas fa-upload mr-1"></i>上传选中
+                        </button>
+                        <button type="button" id="localCancelBtn" class="px-3 py-1.5 text-sm bg-gray-300 hover:bg-gray-400 rounded-lg hidden">取消</button>
+                    </div>
+                </div>
+                <div class="px-4 py-2 bg-gray-50 text-xs text-gray-500 border-b">
+                    <span id="localSummary">未选择文件</span> · 直传不经服务器 · 大文件自动分片
+                </div>
+                <div id="localListWrap" class="flex-grow overflow-auto max-h-[520px]">
+                    <table class="min-w-full text-sm">
+                        <thead class="bg-gray-50 sticky top-0">
+                            <tr>
+                                <th class="px-3 py-2 w-8"><input type="checkbox" id="localSelectAll" class="rounded" checked></th>
+                                <th class="px-3 py-2 text-left text-gray-500">路径</th>
+                                <th class="px-3 py-2 text-right text-gray-500 w-20">大小</th>
+                                <th class="px-3 py-2 text-left text-gray-500 w-32">进度</th>
+                            </tr>
+                        </thead>
+                        <tbody id="localFileList" class="divide-y divide-gray-100"></tbody>
+                    </table>
+                </div>
+                <div id="localEmptyHint" class="p-8 text-center text-gray-400 text-sm">选择文件或文件夹后开始上传</div>
             </div>
-            <div id="uploadFailedList" class="text-sm text-red-600 max-h-40 overflow-y-auto"></div>
         </div>
-        {% else %}
-        <p class="text-amber-700 bg-amber-50 border border-amber-200 rounded p-4">请先在「存储目标」中配置 OSS/COS 目标。</p>
-        {% endif %}
+
+        <p class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
+            传输均走客户端 ↔ 对象存储直链，服务器仅签发凭证与列举目录。上传完成后临时 Job 记录会自动清除。
+            若直传失败，请确认 Bucket CORS 已允许 PUT/GET/HEAD 并暴露 <code>ETag</code>。
+        </p>
     </div>
+    {% else %}
+    <div class="bg-white rounded-xl shadow-md p-8 text-center">
+        <p class="text-amber-700">请先在「存储目标」中配置 OSS/COS。</p>
+    </div>
+    {% endif %}
 </div>

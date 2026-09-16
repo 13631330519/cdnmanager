@@ -38,6 +38,21 @@ def get_adapter(provider):
     raise ValueError(f'不支持的存储类型: {provider}')
 
 
+def ensure_browser_cors(adapter, credential, config, allowed_origins=None):
+    if not hasattr(adapter, 'ensure_browser_cors'):
+        return
+    adapter.ensure_browser_cors(credential, config, allowed_origins)
+
+
+def build_list_prefix(target_config, remote_prefix=''):
+    base = (target_config.get('base_path') or '').strip('/')
+    extra = (remote_prefix or '').replace('\\', '/').strip('/')
+    segments = [part for part in [base, extra] if part]
+    if not segments:
+        return ''
+    return '/'.join(segments) + '/'
+
+
 def build_public_url(target_config, storage_key):
     base = (target_config.get('public_base_url') or '').strip()
     if not base:
