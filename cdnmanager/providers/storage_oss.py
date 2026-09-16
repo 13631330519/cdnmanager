@@ -3,6 +3,7 @@ import math
 import oss2
 
 from cdnmanager.common import UPLOAD_PART_SIZE, UPLOAD_PRESIGN_EXPIRES
+from cdnmanager.providers.cors_merge import UPLOAD_METHODS, normalize_origins, rule_satisfies_upload
 
 
 def _endpoint(config):
@@ -25,17 +26,43 @@ def presign_put(credential, config, object_key, mime=None):
     return url.replace('http://', 'https://') if url.startswith('http://') else url
 
 
-def ensure_browser_cors(credential, config, allowed_origins=None):
-    bucket = _bucket_client(credential, config)
-    origins = allowed_origins or ['*']
-    rule = oss2.models.CorsRule(
-        allowed_origins=origins,
-        allowed_methods=['GET', 'PUT', 'POST', 'HEAD', 'DELETE'],
+def _load_existing_oss_cors_rules(bucket):
+    try:
+        existing = bucket.get_bucket_cors()
+        return list(existing.rules or []) if existing else []
+    except oss2.exceptions.NoSuchCors:
+        return []
+    except Exception as exc:
+        if 'NoSuchCors' in str(exc):
+            return []
+        raise
+
+
+def _build_oss_upload_rule(origins):
+    return oss2.models.CorsRule(
+        allowed_origins=sorted(normalize_origins(origins)),
+        allowed_methods=sorted(UPLOAD_METHODS),
         allowed_headers=['*'],
         expose_headers=['ETag', 'x-oss-request-id', 'Content-Length'],
         max_age_seconds=3600,
     )
-    bucket.put_bucket_cors(oss2.models.BucketCors([rule]))
+
+
+def ensure_browser_cors(credential, config, allowed_origins=None):
+    bucket = _bucket_client(credential, config)
+    origins = allowed_origins or ['*']
+    rules = _load_existing_oss_cors_rules(bucket)
+    if not any(
+        rule_satisfies_upload(
+            rule.allowed_origins,
+            rule.allowed_methods,
+            rule.allowed_headers,
+            origins,
+        )
+        for rule in rules
+    ):
+        rules.append(_build_oss_upload_rule(origins))
+    bucket.put_bucket_cors(oss2.models.BucketCors(rules))
 
 
 def init_multipart(credential, config, object_key, file_size, mime=None):

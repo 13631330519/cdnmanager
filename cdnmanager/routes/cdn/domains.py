@@ -19,6 +19,7 @@ from cdnmanager.db.models import (
     load_refreshing_urls,
     try_acquire_polling_lease,
 )
+from cdnmanager.db.projects import get_environment, get_project, sync_domain_tags_from_ids, user_can_access_project
 from cdnmanager.providers.cdn_dns_sync import sync_cdn_cname
 from cdnmanager.services.refresh_service import (
     poll_domain_record,
@@ -41,9 +42,16 @@ def user_can_access_domain(username, domain):
 
 
 def get_visible_domains(username, role):
-    if can_manage_all_domains(role):
-        return load_domains()
-    return [d for d in load_domains() if user_can_access_domain(username, d)]
+    visible = []
+    for domain in load_domains():
+        if not can_manage_all_domains(role) and not user_can_access_domain(username, domain):
+            continue
+        if domain.get('project_id'):
+            project = get_project(domain['project_id'])
+            if project and not user_can_access_project(username, role, project):
+                continue
+        visible.append(domain)
+    return visible
 
 
 def parse_allowed_users(raw_value):
@@ -58,6 +66,26 @@ def parse_group_tags(raw_value):
         return []
     tags = [tag.strip() for tag in raw_value.split(',') if tag.strip()]
     return sorted(set(tags))
+
+
+def parse_project_binding(form):
+    project_id = (form.get('project_id') or '').strip() or None
+    environment_id = (form.get('environment_id') or '').strip() or None
+    if environment_id and not project_id:
+        environment = get_environment(environment_id)
+        if environment:
+            project_id = environment['project_id']
+    if project_id and not get_project(project_id):
+        project_id = None
+        environment_id = None
+    if environment_id and not get_environment(environment_id):
+        environment_id = None
+    if environment_id:
+        environment = get_environment(environment_id)
+        if not environment or environment['project_id'] != project_id:
+            environment_id = None
+    projects, environments = sync_domain_tags_from_ids(project_id, environment_id)
+    return project_id, environment_id, projects, environments
 
 
 record_refresh_submission = record_domain_refresh
@@ -146,8 +174,7 @@ def add_domain():
     provider = request.form.get('provider')
     credential_id = request.form.get('credential_id')
     allowed_users = parse_allowed_users(request.form.get('allowed_users', '').strip())
-    projects = parse_group_tags(request.form.get('projects', '').strip())
-    environments = parse_group_tags(request.form.get('environments', '').strip())
+    project_id, environment_id, projects, environments = parse_project_binding(request.form)
     cpcode = request.form.get('cpcode', '').strip() or None
     if not domain or not domain_name or not provider or not credential_id:
         return jsonify({"error": "域名、域名名称、提供商和凭据ID必填"}), 400
@@ -169,6 +196,8 @@ def add_domain():
         "provider": provider,
         "credential_id": credential_id,
         "cpcode": cpcode,
+        "project_id": project_id,
+        "environment_id": environment_id,
         "projects": projects,
         "environments": environments,
         "allowed_users": allowed_users,
@@ -202,8 +231,7 @@ def edit_domain():
         domain_name = request.form.get('domain_name', '').strip()
         allowed_users = parse_allowed_users(request.form.get('allowed_users', '').strip())
 
-    projects = parse_group_tags(request.form.get('projects', '').strip())
-    environments = parse_group_tags(request.form.get('environments', '').strip())
+    project_id, environment_id, projects, environments = parse_project_binding(request.form)
     provider = request.form.get('provider')
     credential_id = request.form.get('credential_id')
     cpcode = request.form.get('cpcode', '').strip() or None
@@ -224,6 +252,8 @@ def edit_domain():
         'provider': provider,
         'credential_id': credential_id,
         'cpcode': cpcode if provider == 'akamai' else None,
+        'project_id': project_id,
+        'environment_id': environment_id,
         'projects': projects,
         'environments': environments,
         'allowed_users': allowed_users,

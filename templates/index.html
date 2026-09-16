@@ -7,6 +7,7 @@
     {% include "partials/tab_urls.html" %}
     {% include "partials/tab_upload.html" %}
                 {% if user.role == 'admin' %}
+    {% include "partials/tab_projects.html" %}
     {% include "partials/tab_storage_targets.html" %}
     {% include "partials/tab_storage_credentials.html" %}
     {% include "partials/tab_credentials.html" %}
@@ -20,8 +21,15 @@
     <script id="provider-credentials" type="application/json">{{ provider_credentials_json | safe }}</script>
     <script id="dns-credentials" type="application/json">{{ dns_credentials_json | safe }}</script>
     <script id="storage-credentials" type="application/json">{{ storage_credentials_json | safe }}</script>
+    <script id="projects-data" type="application/json">{{ projects_json | safe }}</script>
+    {% if user.role == 'admin' %}
+    <script id="all-projects-tree" type="application/json">{{ all_projects_tree_json | safe }}</script>
+    {% endif %}
     <script src="{{ url_for('static', filename='js/tabs.js') }}"></script>
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    {% if user.role == 'admin' %}
+    <script src="{{ url_for('static', filename='js/projects.js') }}"></script>
+    {% endif %}
     <script src="{{ url_for('static', filename='js/upload-idb.js') }}"></script>
     <script src="{{ url_for('static', filename='js/upload.js') }}"></script>
 {% endblock %}

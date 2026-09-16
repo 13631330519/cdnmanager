@@ -12,6 +12,7 @@ from cdnmanager.db.models import (
     get_user,
     upsert_storage_target,
 )
+from cdnmanager.db.projects import get_environment, get_project
 from cdnmanager.providers.storage_service import ensure_browser_cors, get_adapter
 
 storage_target_bp = Blueprint('storage_target_bp', __name__)
@@ -26,15 +27,21 @@ def _require_admin():
     return None
 
 
-def _parse_target_config(raw):
-    if not raw:
-        return {}
-    if isinstance(raw, dict):
-        return raw
-    try:
-        return json.loads(raw)
-    except Exception:
-        return {}
+def _parse_binding(project_id, environment_id):
+    project_id = (project_id or '').strip() or None
+    environment_id = (environment_id or '').strip() or None
+    if environment_id and not project_id:
+        environment = get_environment(environment_id)
+        if environment:
+            project_id = environment['project_id']
+    if project_id and not get_project(project_id):
+        project_id = None
+        environment_id = None
+    if environment_id:
+        environment = get_environment(environment_id)
+        if not environment or environment['project_id'] != project_id:
+            environment_id = None
+    return project_id, environment_id
 
 
 @storage_target_bp.route('/save_storage_target', methods=['POST'])
@@ -49,11 +56,12 @@ def save_storage_target_route():
     credential_id = request.form.get('credential_id', '').strip()
     bucket = request.form.get('bucket', '').strip()
     region = request.form.get('region', '').strip()
-    base_path = request.form.get('base_path', '').strip()
-    public_base_url = request.form.get('public_base_url', '').strip()
     endpoint = request.form.get('endpoint', '').strip()
-    cdn_domain = request.form.get('cdn_domain', '').strip() or None
     allow_user_delete = request.form.get('allow_user_delete') == '1'
+    project_id, environment_id = _parse_binding(
+        request.form.get('project_id'),
+        request.form.get('environment_id'),
+    )
 
     if provider not in STORAGE_PROVIDERS:
         return jsonify({'error': '不支持的存储类型'}), 400
@@ -73,11 +81,11 @@ def save_storage_target_route():
         'target_config': {
             'bucket': bucket,
             'region': region,
-            'base_path': base_path,
-            'public_base_url': public_base_url,
             'endpoint': endpoint,
         },
-        'cdn_domain': cdn_domain,
+        'cdn_domain': None,
+        'project_id': project_id,
+        'environment_id': environment_id,
         'allow_user_delete': allow_user_delete,
         'created_at': existing.get('created_at') if existing else datetime.now().isoformat(),
         'updated_at': datetime.now().isoformat(),
@@ -89,13 +97,14 @@ def save_storage_target_route():
         ensure_browser_cors(adapter, credential, {
             'bucket': bucket,
             'region': region,
-            'base_path': base_path,
-            'public_base_url': public_base_url,
             'endpoint': endpoint,
         }, ['*'])
         message += '，已尝试配置 Bucket CORS'
     except Exception as exc:
-        cors_warning = f'Bucket CORS 自动配置失败，请手动配置：{exc}'
+        hint = ''
+        if provider == 'cos':
+            hint = '（腾讯云需授予 name/cos:GetBucketCORS 与 name/cos:PutBucketCORS，或在控制台手动配置跨域）'
+        cors_warning = f'Bucket CORS 自动配置失败，请手动配置{hint}：{exc}'
 
     payload = {'success': True, 'message': message, 'target_id': target_id}
     if cors_warning:

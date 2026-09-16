@@ -13,6 +13,7 @@ def register_blueprints(app):
     from cdnmanager.routes.storage.targets import storage_target_bp
     from cdnmanager.routes.storage.uploads import upload_bp
     from cdnmanager.routes.users import user_bp
+    from cdnmanager.routes.projects import project_bp
 
     app.register_blueprint(domain_bp)
     app.register_blueprint(credential_bp)
@@ -25,3 +26,4 @@ def register_blueprints(app):
     app.register_blueprint(storage_target_bp)
     app.register_blueprint(storage_browser_bp)
     app.register_blueprint(upload_bp)
+    app.register_blueprint(project_bp)

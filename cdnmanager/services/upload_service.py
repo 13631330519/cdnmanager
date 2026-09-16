@@ -27,14 +27,11 @@ from cdnmanager.db.models import (
 )
 from cdnmanager.providers.storage_service import (
     build_object_key,
-    build_public_url,
     get_adapter,
     total_parts_for,
     uses_multipart,
 )
-from cdnmanager.routes.cdn.credentials import get_credential
-from cdnmanager.routes.cdn.domains import find_bound_domain
-from cdnmanager.services.refresh_service import refresh_and_record
+from cdnmanager.services.storage_refresh_service import refresh_file_for_target
 
 
 def build_file_rows(target, job_id, remote_prefix, files):
@@ -224,18 +221,10 @@ def verify_multipart_parts(adapter, credential, config, file_record, local_parts
 
 
 def batch_refresh_cdn(job, target, limit=200):
-    if not job.get('refresh_after') or not target.get('cdn_domain'):
+    if not job.get('refresh_after'):
         return {'success': True, 'refreshed': 0, 'skipped': True}
-
-    config = target.get('target_config') or {}
-    cdn_domain = target.get('cdn_domain')
-    domain_record = find_bound_domain(cdn_domain)
-    if not domain_record:
-        return {'success': False, 'error': '未找到绑定的 CDN 域名', 'refreshed': 0}
-
-    credential = get_credential(domain_record.get('provider'), domain_record.get('credential_id'))
-    if not credential:
-        return {'success': False, 'error': 'CDN 凭据不存在', 'refreshed': 0}
+    if not target.get('environment_id'):
+        return {'success': False, 'error': '存储目标未绑定项目/环境', 'refreshed': 0}
 
     refreshed = failed = 0
     offset = 0
@@ -245,13 +234,8 @@ def batch_refresh_cdn(job, target, limit=200):
             break
         offset += len(files)
         for file_record in files:
-            public_url = build_public_url(config, file_record['storage_key'])
-            if not public_url:
-                continue
-            result = refresh_and_record(domain_record, credential, url=public_url, record_url=True)
-            if result.get('success'):
-                refreshed += 1
-            else:
-                failed += 1
+            result = refresh_file_for_target(target, file_record['storage_key'])
+            refreshed += result.get('refreshed', 0)
+            failed += result.get('failed', 0)
 
-    return {'success': True, 'refreshed': refreshed, 'failed': failed}
+    return {'success': refreshed > 0 or failed == 0, 'refreshed': refreshed, 'failed': failed}

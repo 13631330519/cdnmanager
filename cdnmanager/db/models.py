@@ -211,6 +211,50 @@ def migrate_schema(conn):
         )
         '''
     )
+    conn.execute(
+        '''
+        CREATE TABLE IF NOT EXISTS projects (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            description TEXT,
+            api_key_secret TEXT,
+            created_at TEXT,
+            updated_at TEXT
+        )
+        '''
+    )
+    conn.execute(
+        '''
+        CREATE TABLE IF NOT EXISTS project_environments (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            api_key_secret TEXT,
+            created_at TEXT,
+            updated_at TEXT,
+            UNIQUE(project_id, name),
+            FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+        )
+        '''
+    )
+    conn.execute(
+        '''
+        CREATE TABLE IF NOT EXISTS project_env_storage_targets (
+            environment_id TEXT NOT NULL,
+            storage_target_id TEXT NOT NULL,
+            PRIMARY KEY (environment_id, storage_target_id),
+            FOREIGN KEY (environment_id) REFERENCES project_environments(id) ON DELETE CASCADE
+        )
+        '''
+    )
+    _ensure_column(conn, 'domains', 'project_id', 'TEXT')
+    _ensure_column(conn, 'domains', 'environment_id', 'TEXT')
+    _ensure_column(conn, 'projects', 'allowed_users', 'TEXT')
+    _ensure_column(conn, 'storage_targets', 'project_id', 'TEXT')
+    _ensure_column(conn, 'storage_targets', 'environment_id', 'TEXT')
+    from cdnmanager.db.projects import migrate_legacy_domain_tags, migrate_env_storage_to_targets
+    migrate_legacy_domain_tags(conn)
+    migrate_env_storage_to_targets(conn)
 
 
 def ensure_database():
@@ -403,6 +447,7 @@ def load_domains():
     return query_all(
         '''
         SELECT domain, domain_name, provider, credential_id, cpcode, projects, environments,
+               project_id, environment_id,
                allowed_users, added_by, added_at, refresh_status, last_refreshed_at, task_id,
                refresh_task_status, refresh_task_detail
         FROM domains ORDER BY domain
@@ -614,6 +659,7 @@ def get_domain(domain):
     return query_one(
         '''
         SELECT domain, domain_name, provider, credential_id, cpcode, projects, environments,
+               project_id, environment_id,
                allowed_users, added_by, added_at, refresh_status, last_refreshed_at, task_id,
                refresh_task_status, refresh_task_detail
         FROM domains WHERE domain = ?
@@ -627,10 +673,11 @@ def upsert_domain(domain):
         conn.execute(
             '''
             INSERT OR REPLACE INTO domains
-            (domain, domain_name, provider, credential_id, cpcode, projects, environments, allowed_users,
+            (domain, domain_name, provider, credential_id, cpcode, projects, environments,
+             project_id, environment_id, allowed_users,
              added_by, added_at, refresh_status, last_refreshed_at, task_id, refresh_task_status,
              refresh_task_detail)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''',
             (
                 domain.get('domain'),
@@ -640,6 +687,8 @@ def upsert_domain(domain):
                 domain.get('cpcode'),
                 json.dumps(domain.get('projects', []), ensure_ascii=False),
                 json.dumps(domain.get('environments', []), ensure_ascii=False),
+                domain.get('project_id'),
+                domain.get('environment_id'),
                 json.dumps(domain.get('allowed_users', []), ensure_ascii=False),
                 domain.get('added_by'),
                 domain.get('added_at'),
@@ -673,6 +722,9 @@ def update_domain_fields(domain_name, updates):
         if key in {'allowed_users', 'projects', 'environments'}:
             set_clauses.append(f'{key} = ?')
             params.append(json.dumps(value, ensure_ascii=False))
+        elif key in {'project_id', 'environment_id'}:
+            set_clauses.append(f'{key} = ?')
+            params.append(value)
         elif key == 'refresh_task_detail':
             set_clauses.append('refresh_task_detail = ?')
             params.append(json.dumps(value, ensure_ascii=False) if value is not None else None)
@@ -941,6 +993,7 @@ def load_storage_targets():
     return query_all(
         '''
         SELECT id, name, provider, credential_id, target_config, cdn_domain,
+               project_id, environment_id,
                allow_user_delete, created_at, updated_at
         FROM storage_targets ORDER BY name
         '''
@@ -951,6 +1004,7 @@ def get_storage_target(target_id):
     return query_one(
         '''
         SELECT id, name, provider, credential_id, target_config, cdn_domain,
+               project_id, environment_id,
                allow_user_delete, created_at, updated_at
         FROM storage_targets WHERE id = ?
         ''',
@@ -964,8 +1018,9 @@ def upsert_storage_target(item):
             '''
             INSERT OR REPLACE INTO storage_targets
             (id, name, provider, credential_id, target_config, cdn_domain,
+             project_id, environment_id,
              allow_user_delete, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''',
             (
                 item.get('id'),
@@ -974,6 +1029,8 @@ def upsert_storage_target(item):
                 item.get('credential_id'),
                 json.dumps(item.get('target_config') or {}, ensure_ascii=False),
                 item.get('cdn_domain'),
+                item.get('project_id'),
+                item.get('environment_id'),
                 1 if item.get('allow_user_delete') else 0,
                 item.get('created_at'),
                 item.get('updated_at'),

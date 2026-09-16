@@ -3,6 +3,7 @@ import math
 from qcloud_cos import CosConfig, CosS3Client
 
 from cdnmanager.common import UPLOAD_PART_SIZE, UPLOAD_PRESIGN_EXPIRES
+from cdnmanager.providers.cors_merge import merge_cos_rules
 
 
 def _client(credential, config):
@@ -28,22 +29,29 @@ def presign_put(credential, config, object_key, mime=None):
     return url
 
 
+def _load_existing_cos_cors_rules(client, bucket):
+    try:
+        response = client.get_bucket_cors(Bucket=bucket)
+        return list(response.get('CORSRule') or [])
+    except Exception as exc:
+        code = getattr(exc, 'get_error_code', lambda: None)()
+        if code in {'NoSuchCORSConfiguration', 'NoSuchBucketCors'}:
+            return []
+        message = str(exc)
+        if 'NoSuchCORSConfiguration' in message or 'NoSuchBucketCors' in message:
+            return []
+        raise
+
+
 def ensure_browser_cors(credential, config, allowed_origins=None):
     client, _region = _client(credential, config)
+    bucket = config['bucket']
     origins = allowed_origins or ['*']
-    if isinstance(origins, str):
-        origins = [origins]
+    existing_rules = _load_existing_cos_cors_rules(client, bucket)
+    merged_rules = merge_cos_rules(existing_rules, origins)
     client.put_bucket_cors(
-        Bucket=config['bucket'],
-        CORSConfiguration={
-            'CORSRule': [{
-                'AllowedOrigin': origins,
-                'AllowedMethod': ['GET', 'PUT', 'POST', 'HEAD', 'DELETE'],
-                'AllowedHeader': ['*'],
-                'ExposeHeader': ['ETag', 'Content-Length', 'x-cos-request-id'],
-                'MaxAgeSeconds': '3600',
-            }],
-        },
+        Bucket=bucket,
+        CORSConfiguration={'CORSRule': merged_rules},
     )
 
 

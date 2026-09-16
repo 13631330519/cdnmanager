@@ -2,6 +2,53 @@ const providerCredentialsEl = document.getElementById('provider-credentials');
 const providerCredentials = providerCredentialsEl
     ? JSON.parse(providerCredentialsEl.textContent)
     : {};
+const projectsDataEl = document.getElementById('projects-data');
+const domainProjectsData = projectsDataEl ? JSON.parse(projectsDataEl.textContent) : [];
+
+function fillProjectSelect(selectEl, selectedId) {
+    if (!selectEl) return;
+    const options = ['<option value="">未绑定</option>'];
+    domainProjectsData.forEach((project) => {
+        options.push(`<option value="${project.id}" ${project.id === selectedId ? 'selected' : ''}>${project.name}</option>`);
+    });
+    selectEl.innerHTML = options.join('');
+}
+
+function fillEnvironmentSelect(selectEl, projectId, selectedId) {
+    if (!selectEl) return;
+    const options = ['<option value="">未绑定</option>'];
+    const project = domainProjectsData.find((item) => item.id === projectId);
+    (project?.environments || []).forEach((env) => {
+        options.push(`<option value="${env.id}" ${env.id === selectedId ? 'selected' : ''}>${env.name}</option>`);
+    });
+    selectEl.innerHTML = options.join('');
+}
+
+function bindProjectEnvironmentCascade(projectSelect, environmentSelect) {
+    if (!projectSelect || !environmentSelect) return;
+    projectSelect.addEventListener('change', () => {
+        fillEnvironmentSelect(environmentSelect, projectSelect.value, '');
+    });
+}
+
+window.refreshDomainProjectSelects = function refreshDomainProjectSelects(projects) {
+    if (projects) {
+        domainProjectsData.splice(0, domainProjectsData.length, ...projects);
+    }
+    if (!domainProjectsData.length) return;
+    const addProject = document.getElementById('addDomainProject');
+    const addEnvironment = document.getElementById('addDomainEnvironment');
+    fillProjectSelect(addProject, addProject?.value || '');
+    fillEnvironmentSelect(addEnvironment, addProject?.value || '', addEnvironment?.value || '');
+};
+
+if (projectsDataEl) {
+    const addProject = document.getElementById('addDomainProject');
+    const addEnvironment = document.getElementById('addDomainEnvironment');
+    fillProjectSelect(addProject, '');
+    fillEnvironmentSelect(addEnvironment, '', '');
+    bindProjectEnvironmentCascade(addProject, addEnvironment);
+}
 
 function buildCredentialOptions(provider, selectedId) {
     const creds = providerCredentials[provider] || [];
@@ -331,8 +378,12 @@ function openDomainEditModal(row) {
     document.getElementById('domainEditModalTitle').textContent = row.dataset.domain || '';
     const nameInput = document.getElementById('domainEditName');
     if (nameInput) nameInput.value = row.dataset.domainName || '';
-    document.getElementById('domainEditProjects').value = parseDomainTagList(row.dataset.projects).join(', ');
-    document.getElementById('domainEditEnvironments').value = parseDomainTagList(row.dataset.environments).join(', ');
+    const projectSelect = document.getElementById('domainEditProject');
+    const environmentSelect = document.getElementById('domainEditEnvironment');
+    const projectId = row.dataset.projectId || '';
+    const environmentId = row.dataset.environmentId || '';
+    fillProjectSelect(projectSelect, projectId);
+    fillEnvironmentSelect(environmentSelect, projectId, environmentId);
     document.getElementById('domainEditProvider').value = row.dataset.sortProvider || '';
     document.getElementById('domainEditCredential').innerHTML = buildCredentialOptions(
         row.dataset.sortProvider || '',
@@ -376,6 +427,10 @@ function initDomainEditModal() {
         document.getElementById('domainEditCredential').innerHTML = buildCredentialOptions(provider, '');
         toggleDomainEditCpcode();
     });
+    bindProjectEnvironmentCascade(
+        document.getElementById('domainEditProject'),
+        document.getElementById('domainEditEnvironment'),
+    );
 
     form.addEventListener('submit', async (event) => {
         event.preventDefault();
@@ -387,8 +442,8 @@ function initDomainEditModal() {
             domain_name: document.getElementById('domainEditName')?.value || '',
             provider,
             credential_id: document.getElementById('domainEditCredential').value,
-            projects: document.getElementById('domainEditProjects').value,
-            environments: document.getElementById('domainEditEnvironments').value,
+            project_id: document.getElementById('domainEditProject')?.value || '',
+            environment_id: document.getElementById('domainEditEnvironment')?.value || '',
         };
         const allowedInput = document.getElementById('domainEditAllowedUsers');
         if (allowedInput) params.allowed_users = allowedInput.value;
@@ -554,27 +609,91 @@ document.querySelectorAll('.delete-credential-btn').forEach(btn => {
 
 const userForm = document.getElementById('userForm');
 if (userForm) {
+    document.querySelectorAll('.edit-user-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const row = btn.closest('.user-row');
+            if (!row) return;
+            document.getElementById('userFormUsername').value = row.dataset.username || '';
+            document.getElementById('userFormRole').value = row.dataset.role || 'user';
+            const projectSelect = document.getElementById('userFormProjects');
+            const selected = (row.dataset.projectIds || '').split(',').filter(Boolean);
+            if (projectSelect) {
+                Array.from(projectSelect.options).forEach((option) => {
+                    option.selected = selected.includes(option.value);
+                });
+            }
+            document.getElementById('userFormUsername').readOnly = true;
+        });
+    });
+
     userForm.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const formData = new FormData(userForm);
+        const params = new URLSearchParams(new FormData(userForm));
+        const projectSelect = document.getElementById('userFormProjects');
+        if (projectSelect) {
+            params.delete('project_ids');
+            params.set(
+                'project_ids',
+                Array.from(projectSelect.selectedOptions).map((option) => option.value).join(','),
+            );
+        }
         const resultDiv = document.getElementById('userResult');
         resultDiv.classList.add('hidden');
         resultDiv.textContent = '';
 
         const response = await fetch('/save_user', {
             method: 'POST',
-            body: new URLSearchParams(formData)
+            body: params,
         });
         const data = await response.json();
-        resultDiv.textContent = data.success ? data.message : data.error;
+        if (data.success && data.generated_password) {
+            resultDiv.textContent = `${data.message}，初始密码：${data.generated_password}`;
+        } else {
+            resultDiv.textContent = data.success ? data.message : data.error;
+        }
         resultDiv.classList.remove('hidden');
         resultDiv.classList.toggle('text-green-600', !!data.success);
         resultDiv.classList.toggle('text-red-600', !data.success);
         if (data.success) {
-            setTimeout(() => location.reload(), 1200);
+            setTimeout(() => location.reload(), data.generated_password ? 5000 : 1200);
         }
     });
 }
+
+const changePasswordBtn = document.getElementById('changePasswordBtn');
+const changePasswordModal = document.getElementById('changePasswordModal');
+const changePasswordForm = document.getElementById('changePasswordForm');
+
+function closeChangePasswordModal() {
+    changePasswordModal?.classList.add('hidden');
+    changePasswordForm?.reset();
+    document.getElementById('changePasswordResult')?.classList.add('hidden');
+}
+
+changePasswordBtn?.addEventListener('click', () => {
+    changePasswordModal?.classList.remove('hidden');
+});
+
+changePasswordModal?.querySelectorAll('[data-close-password-modal]').forEach((el) => {
+    el.addEventListener('click', closeChangePasswordModal);
+});
+
+changePasswordForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const resultDiv = document.getElementById('changePasswordResult');
+    const response = await fetch('/change_password', {
+        method: 'POST',
+        body: new URLSearchParams(new FormData(changePasswordForm)),
+    });
+    const data = await response.json();
+    resultDiv.textContent = data.success ? data.message : data.error;
+    resultDiv.classList.remove('hidden');
+    resultDiv.classList.toggle('text-green-600', !!data.success);
+    resultDiv.classList.toggle('text-red-600', !data.success);
+    if (data.success) {
+        setTimeout(closeChangePasswordModal, 1200);
+    }
+});
 
 document.querySelectorAll('.delete-user-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
@@ -742,11 +861,27 @@ function renderRefreshRecords(records) {
     startExistingUrlRefreshPolling();
 }
 
+function fillRefreshRecordsEnvironmentOptions(projectId, selectedId) {
+    const environmentFilter = document.getElementById('refreshRecordsEnvironmentFilter');
+    if (!environmentFilter) return;
+    const options = ['<option value="">全部</option>'];
+    const project = domainProjectsData.find((item) => item.id === projectId);
+    (project?.environments || []).forEach((env) => {
+        options.push(`<option value="${env.id}" ${env.id === selectedId ? 'selected' : ''}>${env.name}</option>`);
+    });
+    environmentFilter.innerHTML = options.join('');
+}
+
 async function loadRefreshRecords() {
-    const filter = document.getElementById('refreshRecordsDomainFilter');
-    const domain = filter ? filter.value : '';
-    const params = domain ? `?domain=${encodeURIComponent(domain)}` : '';
-    const response = await fetch(`/api/refresh_records${params}`);
+    const domainFilter = document.getElementById('refreshRecordsDomainFilter');
+    const projectFilter = document.getElementById('refreshRecordsProjectFilter');
+    const environmentFilter = document.getElementById('refreshRecordsEnvironmentFilter');
+    const params = new URLSearchParams();
+    if (domainFilter?.value) params.set('domain', domainFilter.value);
+    if (projectFilter?.value) params.set('project_id', projectFilter.value);
+    if (environmentFilter?.value) params.set('environment_id', environmentFilter.value);
+    const query = params.toString();
+    const response = await fetch(`/api/refresh_records${query ? `?${query}` : ''}`);
     const data = await response.json();
     if (!data.success) {
         alert(data.error || '加载刷新记录失败');
@@ -756,9 +891,19 @@ async function loadRefreshRecords() {
 }
 
 const refreshRecordsFilter = document.getElementById('refreshRecordsDomainFilter');
+const refreshRecordsProjectFilter = document.getElementById('refreshRecordsProjectFilter');
+const refreshRecordsEnvironmentFilter = document.getElementById('refreshRecordsEnvironmentFilter');
 const refreshRecordsReloadBtn = document.getElementById('refreshRecordsReloadBtn');
 refreshRecordsFilter?.addEventListener('change', () => loadRefreshRecords());
+refreshRecordsProjectFilter?.addEventListener('change', () => {
+    fillRefreshRecordsEnvironmentOptions(refreshRecordsProjectFilter.value, '');
+    loadRefreshRecords();
+});
+refreshRecordsEnvironmentFilter?.addEventListener('change', () => loadRefreshRecords());
 refreshRecordsReloadBtn?.addEventListener('click', () => loadRefreshRecords());
+if (refreshRecordsProjectFilter && domainProjectsData.length) {
+    fillRefreshRecordsEnvironmentOptions('', '');
+}
 
 startExistingRefreshPolling();
 startExistingUrlRefreshPolling();

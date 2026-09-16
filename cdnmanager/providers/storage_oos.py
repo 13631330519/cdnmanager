@@ -7,6 +7,7 @@ from botocore.client import Config
 from botocore.exceptions import ClientError
 
 from cdnmanager.common import UPLOAD_PART_SIZE, UPLOAD_PRESIGN_EXPIRES
+from cdnmanager.providers.cors_merge import merge_s3_rules
 
 
 def _endpoint(config):
@@ -49,20 +50,26 @@ def presign_put(credential, config, object_key, mime=None):
     )
 
 
+def _load_existing_s3_cors_rules(client, bucket):
+    try:
+        response = client.get_bucket_cors(Bucket=bucket)
+        return list(response.get('CORSRules') or [])
+    except ClientError as exc:
+        code = exc.response.get('Error', {}).get('Code', '')
+        if code in {'NoSuchCORSConfiguration', 'NoSuchBucketCors'}:
+            return []
+        raise
+
+
 def ensure_browser_cors(credential, config, allowed_origins=None):
     client = _client(credential, config)
+    bucket = _bucket(config)
     origins = allowed_origins or ['*']
+    existing_rules = _load_existing_s3_cors_rules(client, bucket)
+    merged_rules = merge_s3_rules(existing_rules, origins)
     client.put_bucket_cors(
-        Bucket=_bucket(config),
-        CORSConfiguration={
-            'CORSRules': [{
-                'AllowedOrigins': origins,
-                'AllowedMethods': ['GET', 'PUT', 'POST', 'HEAD', 'DELETE'],
-                'AllowedHeaders': ['*'],
-                'ExposeHeaders': ['ETag', 'Content-Length'],
-                'MaxAgeSeconds': 3600,
-            }],
-        },
+        Bucket=bucket,
+        CORSConfiguration={'CORSRules': merged_rules},
     )
 
 

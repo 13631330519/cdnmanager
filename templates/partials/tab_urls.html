@@ -7,6 +7,21 @@
             </div>
             <div class="flex flex-wrap items-center gap-3">
                 <label class="flex items-center gap-2 text-sm text-gray-600">
+                    <span>项目</span>
+                    <select id="refreshRecordsProjectFilter" class="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 min-w-[8rem]">
+                        <option value="">全部</option>
+                        {% for project in projects_tree %}
+                        <option value="{{ project.id }}">{{ project.name }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <label class="flex items-center gap-2 text-sm text-gray-600">
+                    <span>环境</span>
+                    <select id="refreshRecordsEnvironmentFilter" class="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 min-w-[8rem]">
+                        <option value="">全部</option>
+                    </select>
+                </label>
+                <label class="flex items-center gap-2 text-sm text-gray-600">
                     <span>域名</span>
                     <select id="refreshRecordsDomainFilter" class="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 min-w-[12rem]">
                         <option value="">全部域名</option>

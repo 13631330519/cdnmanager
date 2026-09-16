@@ -22,8 +22,6 @@ from cdnmanager.common import (
     UPLOAD_PRESIGN_BATCH_MAX,
 )
 from cdnmanager.routes.cdn.credentials import get_credential
-from cdnmanager.routes.cdn.domains import find_bound_domain
-from cdnmanager.services.refresh_service import refresh_and_record
 from cdnmanager.db.models import (
     cleanup_finished_upload_job,
     count_upload_files,
@@ -46,13 +44,13 @@ from cdnmanager.db.models import (
 )
 from cdnmanager.providers.storage_service import (
     build_object_key,
-    build_public_url,
     ensure_browser_cors,
     get_adapter,
     part_size_for,
     total_parts_for,
     uses_multipart,
 )
+from cdnmanager.services.storage_refresh_service import refresh_file_for_target
 from cdnmanager.services.upload_service import (
     append_manifest_batch,
     batch_refresh_cdn,
@@ -116,18 +114,10 @@ def _touch_heartbeat(file_id, extra=None):
     update_upload_file(file_id, updates)
 
 
-def _refresh_uploaded_url(cdn_domain, public_url):
-    if not cdn_domain or not public_url:
+def _refresh_uploaded_file(target, storage_key):
+    if not target or not storage_key:
         return None
-    domain_record = find_bound_domain(cdn_domain)
-    if not domain_record and cdn_domain:
-        domain_record = find_bound_domain(public_url.split('/')[2] if '://' in public_url else cdn_domain)
-    if not domain_record:
-        return {'success': False, 'error': '未找到绑定的 CDN 域名'}
-    credential = get_credential(domain_record.get('provider'), domain_record.get('credential_id'))
-    if not credential:
-        return {'success': False, 'error': 'CDN 凭据不存在'}
-    return refresh_and_record(domain_record, credential, url=public_url, record_url=True)
+    return refresh_file_for_target(target, storage_key)
 
 
 @upload_bp.route('/api/upload/jobs', methods=['GET'])
@@ -574,9 +564,12 @@ def complete_upload_file(file_id):
         return jsonify({'success': False, 'error': verify.get('error')}), 400
 
     refresh_result = None
-    public_url = build_public_url(config, file_record['storage_key'])
-    if job.get('refresh_after') and target.get('cdn_domain') and public_url:
-        refresh_result = _refresh_uploaded_url(target.get('cdn_domain'), public_url)
+    public_url = None
+    if job.get('refresh_after'):
+        refresh_result = _refresh_uploaded_file(target, file_record['storage_key'])
+        if refresh_result and refresh_result.get('results'):
+            first = refresh_result['results'][0]
+            public_url = first.get('url')
 
     update_upload_file(file_id, {
         'status': UPLOAD_FILE_COMPLETED,

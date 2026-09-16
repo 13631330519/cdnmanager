@@ -732,19 +732,61 @@
     const storageTargetForm = document.getElementById('storageTargetForm');
     const storageTargetProvider = document.getElementById('storageTargetProvider');
     const storageTargetCredential = document.getElementById('storageTargetCredential');
+    const storageTargetProject = document.getElementById('storageTargetProject');
+    const storageTargetEnvironment = document.getElementById('storageTargetEnvironment');
     const storageCredentialsEl = document.getElementById('storage-credentials');
     const storageCredentials = storageCredentialsEl ? JSON.parse(storageCredentialsEl.textContent) : {};
+    const allProjectsTreeEl = document.getElementById('all-projects-tree');
+    const allProjectsTree = allProjectsTreeEl ? JSON.parse(allProjectsTreeEl.textContent || '[]') : [];
 
-    function updateStorageTargetCredentialOptions() {
+    function fillStorageTargetEnvironmentOptions(projectId, selectedId) {
+        if (!storageTargetEnvironment) return;
+        const project = allProjectsTree.find((item) => item.id === projectId);
+        const options = ['<option value="">绑定环境</option>'];
+        (project?.environments || []).forEach((env) => {
+            options.push(`<option value="${env.id}" ${env.id === selectedId ? 'selected' : ''}>${env.name}</option>`);
+        });
+        storageTargetEnvironment.innerHTML = options.join('');
+    }
+
+    function updateStorageTargetCredentialOptions(selectedId) {
         if (!storageTargetProvider || !storageTargetCredential) return;
         const creds = storageCredentials[storageTargetProvider.value] || [];
         storageTargetCredential.innerHTML = '<option value="">选择凭据</option>';
         creds.forEach((cred) => {
-            storageTargetCredential.insertAdjacentHTML('beforeend', `<option value="${cred.id}">${cred.name} (${cred.id})</option>`);
+            storageTargetCredential.insertAdjacentHTML(
+                'beforeend',
+                `<option value="${cred.id}" ${cred.id === selectedId ? 'selected' : ''}>${cred.name} (${cred.id})</option>`,
+            );
         });
     }
-    storageTargetProvider?.addEventListener('change', updateStorageTargetCredentialOptions);
-    updateStorageTargetCredentialOptions();
+
+    storageTargetProject?.addEventListener('change', () => {
+        fillStorageTargetEnvironmentOptions(storageTargetProject.value, '');
+    });
+    storageTargetProvider?.addEventListener('change', () => updateStorageTargetCredentialOptions(''));
+    updateStorageTargetCredentialOptions('');
+
+    document.querySelectorAll('.edit-storage-target-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const row = btn.closest('.storage-target-row');
+            if (!row || !storageTargetForm) return;
+            document.getElementById('storageTargetId').value = row.dataset.targetId || '';
+            storageTargetForm.name.value = row.dataset.name || '';
+            storageTargetProvider.value = row.dataset.provider || '';
+            updateStorageTargetCredentialOptions(row.dataset.credentialId || '');
+            if (storageTargetProject) {
+                storageTargetProject.value = row.dataset.projectId || '';
+                fillStorageTargetEnvironmentOptions(row.dataset.projectId || '', row.dataset.environmentId || '');
+            }
+            storageTargetForm.bucket.value = row.dataset.bucket || '';
+            storageTargetForm.region.value = row.dataset.region || '';
+            storageTargetForm.endpoint.value = row.dataset.endpoint || '';
+            const allowDelete = storageTargetForm.querySelector('input[name="allow_user_delete"]');
+            if (allowDelete) allowDelete.checked = row.dataset.allowUserDelete === '1';
+            storageTargetForm.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+    });
 
     storageTargetForm?.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -771,6 +813,47 @@
             else alert(data.error || '删除失败');
         });
     });
+
+    const storageFilterProject = document.getElementById('storageFilterProject');
+    const storageFilterEnvironment = document.getElementById('storageFilterEnvironment');
+    const storageTargetsTableBody = document.getElementById('storageTargetsTableBody');
+    const storageListSummary = document.getElementById('storageListSummary');
+
+    function fillStorageFilterEnvironmentOptions(projectId) {
+        if (!storageFilterEnvironment) return;
+        const project = allProjectsTree.find((item) => item.id === projectId);
+        const options = ['<option value="">全部</option>'];
+        (project?.environments || []).forEach((env) => {
+            options.push(`<option value="${env.id}">${env.name}</option>`);
+        });
+        storageFilterEnvironment.innerHTML = options.join('');
+    }
+
+    function applyStorageTargetsFilter() {
+        if (!storageTargetsTableBody) return;
+        const projectFilter = storageFilterProject?.value || '';
+        const environmentFilter = storageFilterEnvironment?.value || '';
+        const rows = storageTargetsTableBody.querySelectorAll('.storage-target-row');
+        let visible = 0;
+        rows.forEach((row) => {
+            const matchProject = !projectFilter || row.dataset.projectId === projectFilter;
+            const matchEnvironment = !environmentFilter || row.dataset.environmentId === environmentFilter;
+            const show = matchProject && matchEnvironment;
+            row.classList.toggle('hidden', !show);
+            if (show) visible += 1;
+        });
+        if (storageListSummary) {
+            storageListSummary.textContent = `共 ${rows.length} 个，显示 ${visible} 个`;
+        }
+    }
+
+    storageFilterProject?.addEventListener('change', () => {
+        fillStorageFilterEnvironmentOptions(storageFilterProject.value);
+        applyStorageTargetsFilter();
+    });
+    storageFilterEnvironment?.addEventListener('change', applyStorageTargetsFilter);
+    fillStorageFilterEnvironmentOptions('');
+    applyStorageTargetsFilter();
 
     document.getElementById('uploadJobHistoryReload')?.addEventListener('click', () => loadJobHistory());
 

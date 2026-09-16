@@ -18,8 +18,12 @@
         <form id="addDomainForm" class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             <input type="text" name="domain" placeholder="域名（如 example.com）" class="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500" required>
             <input type="text" name="domain_name" placeholder="域名名称" class="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500" required>
-            <input type="text" name="projects" placeholder="项目分组，逗号分隔" class="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500">
-            <input type="text" name="environments" placeholder="环境分组，逗号分隔" class="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500">
+            <select name="project_id" id="addDomainProject" class="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500">
+                <option value="">选择项目（可选）</option>
+            </select>
+            <select name="environment_id" id="addDomainEnvironment" class="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500">
+                <option value="">选择环境（可选）</option>
+            </select>
             <select id="addProviderSelect" name="provider" class="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500" required>
                 <option value="">选择 CDN 提供商</option>
                 {% for key, label in provider_labels.items() %}
@@ -108,6 +112,8 @@
                         data-domain-name="{{ domain.domain_name or '' }}"
                         data-projects='{{ project_tags | tojson }}'
                         data-environments='{{ environment_tags | tojson }}'
+                        data-project-id="{{ domain.project_id or '' }}"
+                        data-environment-id="{{ domain.environment_id or '' }}"
                         data-sort-domain="{{ domain.domain | lower }}"
                         data-sort-domain-name="{{ (domain.domain_name or '') | lower }}"
                         data-sort-provider="{{ domain.provider }}"
@@ -171,12 +177,16 @@
                 <input type="hidden" name="domain_name" id="domainEditName">
                 {% endif %}
                 <div>
-                    <label class="block text-xs font-medium text-gray-500 mb-1">项目分组</label>
-                    <input name="projects" id="domainEditProjects" type="text" placeholder="逗号分隔" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500">
+                    <label class="block text-xs font-medium text-gray-500 mb-1">所属项目</label>
+                    <select name="project_id" id="domainEditProject" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500">
+                        <option value="">未绑定</option>
+                    </select>
                 </div>
                 <div>
-                    <label class="block text-xs font-medium text-gray-500 mb-1">环境分组</label>
-                    <input name="environments" id="domainEditEnvironments" type="text" placeholder="逗号分隔" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500">
+                    <label class="block text-xs font-medium text-gray-500 mb-1">所属环境</label>
+                    <select name="environment_id" id="domainEditEnvironment" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500">
+                        <option value="">未绑定</option>
+                    </select>
                 </div>
                 <div>
                     <label class="block text-xs font-medium text-gray-500 mb-1">CDN 提供商</label>
