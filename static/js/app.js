@@ -50,6 +50,87 @@ if (projectsDataEl) {
     bindProjectEnvironmentCascade(addProject, addEnvironment);
 }
 
+function initCredentialAdminForms() {
+    document.querySelectorAll('.save-credential-form').forEach((form) => {
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const resultDiv = form.querySelector('.credential-result');
+            resultDiv.classList.add('hidden');
+            resultDiv.textContent = '';
+
+            const response = await fetch('/save_credential', {
+                method: 'POST',
+                body: new URLSearchParams(new FormData(form)),
+            });
+            const data = await response.json();
+            resultDiv.textContent = data.success ? data.message : data.error;
+            resultDiv.classList.remove('hidden');
+            resultDiv.classList.toggle('text-green-600', !!data.success);
+            resultDiv.classList.toggle('text-red-600', !data.success);
+            if (data.success) {
+                setTimeout(() => location.reload(), 1200);
+            }
+        });
+    });
+
+    document.querySelectorAll('.delete-credential-btn').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+            const provider = btn.dataset.provider;
+            const credentialId = btn.dataset.credentialId;
+            const confirmed = confirm(`确认删除 ${provider} 凭据 ${credentialId}？`);
+            if (!confirmed) return;
+
+            const response = await fetch('/delete_credential', {
+                method: 'POST',
+                body: new URLSearchParams({ provider, credential_id: credentialId }),
+            });
+            const data = await response.json();
+            if (data.success) {
+                alert(data.message);
+                location.reload();
+            } else {
+                alert(data.error || '删除凭据失败');
+            }
+        });
+    });
+
+    document.querySelectorAll('.save-dns-credential-form').forEach((form) => {
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const resultDiv = form.querySelector('.dns-credential-result');
+            resultDiv.classList.add('hidden');
+            const response = await fetch('/save_dns_credential', {
+                method: 'POST',
+                body: new URLSearchParams(new FormData(form)),
+            });
+            const data = await response.json();
+            resultDiv.textContent = data.success ? data.message : (data.error || data.message);
+            resultDiv.classList.remove('hidden');
+            resultDiv.classList.toggle('text-green-600', !!data.success);
+            resultDiv.classList.toggle('text-red-600', !data.success);
+            if (data.success) setTimeout(() => location.reload(), 1200);
+        });
+    });
+
+    document.querySelectorAll('.delete-dns-credential-btn').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+            if (!confirm(`确认删除 DNS 凭据 ${btn.dataset.credentialId}？`)) return;
+            const response = await fetch('/delete_dns_credential', {
+                method: 'POST',
+                body: new URLSearchParams({
+                    provider: btn.dataset.provider,
+                    credential_id: btn.dataset.credentialId,
+                }),
+            });
+            const data = await response.json();
+            if (data.success) location.reload();
+            else alert(data.error || '删除失败');
+        });
+    });
+}
+
+initCredentialAdminForms();
+
 function buildCredentialOptions(provider, selectedId) {
     const creds = providerCredentials[provider] || [];
     let html = '<option value="">请选择凭据</option>';
@@ -564,49 +645,6 @@ function initDomainsTableLayout() {
 initDomainsTableLayout();
 initDomainsTableActions();
 
-document.querySelectorAll('.save-credential-form').forEach(form => {
-    form.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const resultDiv = form.querySelector('.credential-result');
-        resultDiv.classList.add('hidden');
-        resultDiv.textContent = '';
-
-        const response = await fetch('/save_credential', {
-            method: 'POST',
-            body: new URLSearchParams(new FormData(form))
-        });
-        const data = await response.json();
-        resultDiv.textContent = data.success ? data.message : data.error;
-        resultDiv.classList.remove('hidden');
-        resultDiv.classList.toggle('text-green-600', !!data.success);
-        resultDiv.classList.toggle('text-red-600', !data.success);
-        if (data.success) {
-            setTimeout(() => location.reload(), 1200);
-        }
-    });
-});
-
-document.querySelectorAll('.delete-credential-btn').forEach(btn => {
-    btn.addEventListener('click', async () => {
-        const provider = btn.dataset.provider;
-        const credentialId = btn.dataset.credentialId;
-        const confirmed = confirm(`确认删除 ${provider} 凭据 ${credentialId}？`);
-        if (!confirmed) return;
-
-        const response = await fetch('/delete_credential', {
-            method: 'POST',
-            body: new URLSearchParams({ provider, credential_id: credentialId })
-        });
-        const data = await response.json();
-        if (data.success) {
-            alert(data.message);
-            location.reload();
-        } else {
-            alert(data.error || '删除凭据失败');
-        }
-    });
-});
-
 const userForm = document.getElementById('userForm');
 if (userForm) {
     document.querySelectorAll('.edit-user-btn').forEach((btn) => {
@@ -951,40 +989,6 @@ if (addRootDomainForm) {
         if (data.success) setTimeout(() => location.reload(), 1200);
     });
 }
-
-document.querySelectorAll('.save-dns-credential-form').forEach(form => {
-    form.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const resultDiv = form.querySelector('.dns-credential-result');
-        resultDiv.classList.add('hidden');
-        const response = await fetch('/save_dns_credential', {
-            method: 'POST',
-            body: new URLSearchParams(new FormData(form))
-        });
-        const data = await response.json();
-        resultDiv.textContent = data.success ? data.message : (data.error || data.message);
-        resultDiv.classList.remove('hidden');
-        resultDiv.classList.toggle('text-green-600', !!data.success);
-        resultDiv.classList.toggle('text-red-600', !data.success);
-        if (data.success) setTimeout(() => location.reload(), 1200);
-    });
-});
-
-document.querySelectorAll('.delete-dns-credential-btn').forEach(btn => {
-    btn.addEventListener('click', async () => {
-        if (!confirm(`确认删除 DNS 凭据 ${btn.dataset.credentialId}？`)) return;
-        const response = await fetch('/delete_dns_credential', {
-            method: 'POST',
-            body: new URLSearchParams({
-                provider: btn.dataset.provider,
-                credential_id: btn.dataset.credentialId
-            })
-        });
-        const data = await response.json();
-        if (data.success) location.reload();
-        else alert(data.error || '删除失败');
-    });
-});
 
 document.querySelectorAll('.edit-root-domain-btn').forEach(btn => {
     btn.addEventListener('click', () => {

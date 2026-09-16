@@ -1,8 +1,6 @@
 (function () {
     const projectsDataEl = document.getElementById('projects-data');
-    if (!projectsDataEl) return;
-
-    const projectsData = JSON.parse(projectsDataEl.textContent || '[]');
+    const projectsData = projectsDataEl ? JSON.parse(projectsDataEl.textContent || '[]') : [];
 
     function escapeHtml(value) {
         return String(value ?? '')

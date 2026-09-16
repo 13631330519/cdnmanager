@@ -1,7 +1,7 @@
 <div id="tab-root-domains" class="tab-panel hidden">
     <div class="bg-white rounded-lg shadow-md p-6 mb-8">
         <h2 class="text-xl font-semibold mb-4 text-gray-800">添加主域名</h2>
-        <form id="addRootDomainForm" class="flex flex-col lg:flex-row gap-4 flex-wrap">
+        <form id="addRootDomainForm" class="flex flex-col lg:flex-row gap-4 flex-wrap" action="#" method="post">
             <input type="text" name="domain" placeholder="一级域名（如 example.com）" class="flex-grow px-4 py-2 border rounded focus:ring-2 focus:ring-indigo-500" required>
             <input type="text" name="domain_name" placeholder="域名名称" class="flex-grow px-4 py-2 border rounded focus:ring-2 focus:ring-indigo-500" required>
             <select id="addDnsProviderSelect" name="dns_provider" class="px-4 py-2 border rounded focus:ring-2 focus:ring-indigo-500" required>
@@ -72,7 +72,7 @@
                                 <div class="dns-records-result text-sm text-gray-500">点击「查询记录」加载解析列表</div>
                                 <div class="border-t pt-4">
                                     <h4 class="text-sm font-semibold text-gray-700 mb-2">新增/修改记录</h4>
-                                    <form class="dns-record-form grid gap-3 md:grid-cols-3">
+                                    <form class="dns-record-form grid gap-3 md:grid-cols-3" action="#" method="post">
                                         <input type="hidden" name="record_id">
                                         <input type="text" name="sub_domain" placeholder="主机记录（如 www）" class="px-3 py-2 border rounded text-sm" required>
                                         <select name="record_type" class="px-3 py-2 border rounded text-sm" required>
@@ -96,7 +96,7 @@
                     </tr>
                     <tr class="root-edit-row hidden bg-gray-50" data-domain="{{ item.domain }}">
                         <td colspan="6" class="px-4 py-4">
-                            <form class="root-domain-edit-form grid gap-4 md:grid-cols-4 items-end" data-domain="{{ item.domain }}">
+                            <form class="root-domain-edit-form grid gap-4 md:grid-cols-4 items-end" action="#" method="post" data-domain="{{ item.domain }}">
                                 <div>
                                     <label class="block text-xs text-gray-500 mb-1">名称</label>
                                     <input name="domain_name" type="text" value="{{ item.domain_name }}" class="w-full px-3 py-2 border rounded" required>
