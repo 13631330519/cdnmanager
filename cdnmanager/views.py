@@ -1,0 +1,109 @@
+import json
+from datetime import datetime
+
+from flask import flash, redirect, render_template, request, session, url_for
+from werkzeug.security import check_password_hash
+
+from cdnmanager.common import (
+    CREDENTIAL_FIELD_LABELS,
+    DNS_CREDENTIAL_FIELD_LABELS,
+    DNS_PROVIDER_LABELS,
+    PROVIDER_LABELS,
+    STORAGE_CREDENTIAL_FIELD_LABELS,
+    STORAGE_PROVIDER_LABELS,
+    USER_ROLE_LABELS,
+    VALID_PROVIDERS,
+)
+from cdnmanager.db.models import (
+    load_credentials,
+    load_dns_credentials,
+    load_root_domains,
+    load_storage_credentials,
+    load_storage_targets,
+    load_url_records,
+    load_users,
+)
+from cdnmanager.routes.cdn.domains import get_visible_domains
+
+
+def register_views(app):
+    @app.template_filter('datetimeformat')
+    def datetimeformat(value, fmt='%Y-%m-%d %H:%M:%S'):
+        if isinstance(value, str):
+            value = datetime.fromisoformat(value)
+        return value.strftime(fmt)
+
+    @app.route('/')
+    def index():
+        if 'username' not in session:
+            return redirect(url_for('login'))
+        users = load_users()
+        user = next((u for u in users if u['username'] == session['username']), None)
+        domains = get_visible_domains(user['username'], user['role'])
+        credentials = load_credentials()
+        dns_credentials = load_dns_credentials()
+        root_domains = load_root_domains() if user['role'] == 'admin' else []
+        all_usernames = [u['username'] for u in users]
+        credential_lookup = {
+            provider: {cred['id']: cred for cred in credentials.get(provider, [])}
+            for provider in VALID_PROVIDERS
+        }
+        dns_credential_lookup = {
+            provider: {cred['id']: cred for cred in dns_credentials.get(provider, [])}
+            for provider in dns_credentials.keys()
+        }
+        provider_credentials_json = json.dumps(credentials, ensure_ascii=False)
+        dns_credentials_json = json.dumps(dns_credentials, ensure_ascii=False)
+        storage_credentials = load_storage_credentials()
+        storage_targets = load_storage_targets()
+        storage_credentials_json = json.dumps({
+            provider: [{'id': cred['id'], 'name': cred['name']} for cred in items]
+            for provider, items in storage_credentials.items()
+        }, ensure_ascii=False)
+        refresh_records = [dict(item, _idx=item['id']) for item in load_url_records()]
+        refresh_domain_options = sorted({d['domain'] for d in domains})
+        return render_template(
+            'index.html',
+            user=user,
+            domains=domains,
+            credentials=credentials,
+            dns_credentials=dns_credentials,
+            root_domains=root_domains,
+            credential_lookup=credential_lookup,
+            dns_credential_lookup=dns_credential_lookup,
+            provider_labels=PROVIDER_LABELS,
+            dns_provider_labels=DNS_PROVIDER_LABELS,
+            credential_field_labels=CREDENTIAL_FIELD_LABELS,
+            dns_credential_field_labels=DNS_CREDENTIAL_FIELD_LABELS,
+            provider_credentials_json=provider_credentials_json,
+            dns_credentials_json=dns_credentials_json,
+            users=users,
+            all_usernames=all_usernames,
+            refresh_records=refresh_records,
+            refresh_domain_options=refresh_domain_options,
+            user_role_labels=USER_ROLE_LABELS,
+            storage_credentials=storage_credentials,
+            storage_targets=storage_targets,
+            storage_provider_labels=STORAGE_PROVIDER_LABELS,
+            storage_credential_field_labels=STORAGE_CREDENTIAL_FIELD_LABELS,
+            storage_credentials_json=storage_credentials_json,
+        )
+
+    @app.route('/login', methods=['GET', 'POST'])
+    def login():
+        if request.method == 'POST':
+            username = request.form['username']
+            password = request.form['password']
+            users = load_users()
+            user = next((u for u in users if u['username'] == username), None)
+            if user and check_password_hash(user['password'], password):
+                session.permanent = True
+                session['username'] = username
+                return redirect(url_for('index'))
+            flash('用户名或密码错误')
+        return render_template('login.html')
+
+    @app.route('/logout')
+    def logout():
+        session.clear()
+        return redirect(url_for('login'))

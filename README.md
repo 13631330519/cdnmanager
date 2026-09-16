@@ -103,3 +103,30 @@ APP_PORT=8080 python app.py
 ```
 
 默认账号：`admin / admin123`
+
+## 项目结构
+
+```
+cdnmanager/                 # 仓库根目录
+├── app.py                  # 开发入口
+├── wsgi.py                 # Gunicorn 入口
+├── templates/              # Jinja 模板
+├── static/                 # 前端静态资源
+├── deploy/                 # 部署脚本与配置示例
+├── docs/                   # 设计文档
+└── cdnmanager/             # Python 应用包
+    ├── __init__.py         # create_app() 工厂
+    ├── config.py           # 配置
+    ├── common.py           # 常量与工具
+    ├── views.py            # 页面路由（首页/登录）
+    ├── db/
+    │   └── models.py       # SQLite 数据访问
+    ├── services/
+    │   └── refresh_service.py   # CDN 刷新业务逻辑
+    ├── providers/          # 第三方 API 适配（CDN/DNS/存储）
+    └── routes/             # HTTP 蓝图（按功能划分）
+        ├── cdn/            # 域名、凭据、刷新记录、外部 API
+        ├── dns/            # DNS 凭据、主域名
+        ├── storage/        # 存储目标、直传、文件浏览
+        └── users.py        # 用户管理
+```

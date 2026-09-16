@@ -1,3 +1,3 @@
-from app import app
+from cdnmanager import create_app
 
-application = app
+application = create_app()

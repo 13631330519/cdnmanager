@@ -78,7 +78,7 @@ if (addProviderSelect && addCredentialSelect) {
 }
 
 const DOMAINS_LAYOUT_STORAGE_KEY = 'cdnmanager.domainsLayout';
-const DOMAINS_TABLE_COLSPAN = 13;
+const DOMAINS_TABLE_COLSPAN = 9;
 let domainBlocksMaster = null;
 
 function parseDomainTagList(raw) {
@@ -108,34 +108,20 @@ function compareDomainValues(a, b, order) {
 }
 
 function collectDomainBlocks(tbody) {
-    const blocks = [];
-    const rows = Array.from(tbody.children);
-    for (let i = 0; i < rows.length; i++) {
-        const row = rows[i];
-        if (!row.classList.contains('domain-item-row')) continue;
-        let editRow = null;
-        const next = rows[i + 1];
-        if (next && next.classList.contains('edit-row') && next.dataset.domain === row.dataset.domain) {
-            editRow = next;
-            i += 1;
-        }
-        blocks.push({
-            mainRow: row,
-            editRow,
+    return Array.from(tbody.querySelectorAll('.domain-item-row')).map((row) => ({
+        mainRow: row,
+        provider: row.dataset.sortProvider || '',
+        providerLabel: row.dataset.providerLabel || row.dataset.sortProvider || '',
+        projects: parseDomainTagList(row.dataset.projects),
+        environments: parseDomainTagList(row.dataset.environments),
+        sortValues: {
+            domain_name: row.dataset.sortDomainName || '',
+            domain: row.dataset.sortDomain || '',
             provider: row.dataset.sortProvider || '',
-            providerLabel: row.dataset.providerLabel || row.dataset.sortProvider || '',
-            projects: parseDomainTagList(row.dataset.projects),
-            environments: parseDomainTagList(row.dataset.environments),
-            sortValues: {
-                domain_name: row.dataset.sortDomainName || '',
-                domain: row.dataset.sortDomain || '',
-                provider: row.dataset.sortProvider || '',
-                added_at: row.dataset.sortAddedAt || '',
-                refresh_status: row.dataset.sortRefreshStatus || '',
-            },
-        });
-    }
-    return blocks;
+            added_at: row.dataset.sortAddedAt || '',
+            refresh_status: row.dataset.sortRefreshStatus || '',
+        },
+    }));
 }
 
 function sortDomainBlocks(blocks, field, order) {
@@ -167,16 +153,8 @@ function createDomainGroupHeader(label, count) {
 
 function appendDomainBlockDisplay(fragment, block, clone) {
     const mainRow = clone ? block.mainRow.cloneNode(true) : block.mainRow;
-    let editRow = null;
-    if (block.editRow) {
-        editRow = clone ? block.editRow.cloneNode(true) : block.editRow;
-    }
-    if (clone) {
-        mainRow.dataset.displayClone = 'true';
-        if (editRow) editRow.dataset.displayClone = 'true';
-    }
+    if (clone) mainRow.dataset.displayClone = 'true';
     fragment.appendChild(mainRow);
-    if (editRow) fragment.appendChild(editRow);
 }
 
 function blockMatchesFilters(block, projectFilter, environmentFilter, providerFilter) {
@@ -344,51 +322,104 @@ function applyDomainsTableLayout() {
     }));
 }
 
-function initDomainEditFormState(form) {
-    const providerSelect = form.querySelector('[name="provider"]');
-    const credentialSelect = form.querySelector('[name="credential_id"]');
-    if (!providerSelect || !credentialSelect) return;
-    credentialSelect.innerHTML = buildCredentialOptions(providerSelect.value, credentialSelect.value);
-    toggleEditCpcodeField(form);
+function openDomainEditModal(row) {
+    const modal = document.getElementById('domainEditModal');
+    const form = document.getElementById('domainEditModalForm');
+    if (!modal || !form || !row) return;
+
+    document.getElementById('domainEditDomain').value = row.dataset.domain || '';
+    document.getElementById('domainEditModalTitle').textContent = row.dataset.domain || '';
+    const nameInput = document.getElementById('domainEditName');
+    if (nameInput) nameInput.value = row.dataset.domainName || '';
+    document.getElementById('domainEditProjects').value = parseDomainTagList(row.dataset.projects).join(', ');
+    document.getElementById('domainEditEnvironments').value = parseDomainTagList(row.dataset.environments).join(', ');
+    document.getElementById('domainEditProvider').value = row.dataset.sortProvider || '';
+    document.getElementById('domainEditCredential').innerHTML = buildCredentialOptions(
+        row.dataset.sortProvider || '',
+        row.dataset.credentialId || '',
+    );
+    document.getElementById('domainEditCpcode').value = row.dataset.cpcode || '';
+    const allowedInput = document.getElementById('domainEditAllowedUsers');
+    if (allowedInput) allowedInput.value = row.dataset.allowedUsers || '';
+    toggleDomainEditCpcode();
+    document.getElementById('domainEditResult').classList.add('hidden');
+    modal.classList.remove('hidden');
+}
+
+function closeDomainEditModal() {
+    document.getElementById('domainEditModal')?.classList.add('hidden');
+}
+
+function toggleDomainEditCpcode() {
+    const provider = document.getElementById('domainEditProvider')?.value;
+    const wrap = document.getElementById('domainEditCpcodeWrap');
+    const input = document.getElementById('domainEditCpcode');
+    if (!wrap || !input) return;
+    const isAkamai = provider === 'akamai';
+    wrap.classList.toggle('hidden', !isAkamai);
+    input.required = isAkamai;
+    if (!isAkamai) input.value = '';
+}
+
+function initDomainEditModal() {
+    const modal = document.getElementById('domainEditModal');
+    const form = document.getElementById('domainEditModalForm');
+    if (!modal || !form || form.dataset.bound) return;
+    form.dataset.bound = '1';
+
+    modal.querySelectorAll('[data-close-domain-modal]').forEach((el) => {
+        el.addEventListener('click', closeDomainEditModal);
+    });
+
+    document.getElementById('domainEditProvider')?.addEventListener('change', () => {
+        const provider = document.getElementById('domainEditProvider').value;
+        document.getElementById('domainEditCredential').innerHTML = buildCredentialOptions(provider, '');
+        toggleDomainEditCpcode();
+    });
+
+    form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const resultDiv = document.getElementById('domainEditResult');
+        resultDiv.classList.add('hidden');
+        const provider = document.getElementById('domainEditProvider').value;
+        const params = {
+            domain: document.getElementById('domainEditDomain').value,
+            domain_name: document.getElementById('domainEditName')?.value || '',
+            provider,
+            credential_id: document.getElementById('domainEditCredential').value,
+            projects: document.getElementById('domainEditProjects').value,
+            environments: document.getElementById('domainEditEnvironments').value,
+        };
+        const allowedInput = document.getElementById('domainEditAllowedUsers');
+        if (allowedInput) params.allowed_users = allowedInput.value;
+        if (provider === 'akamai') params.cpcode = document.getElementById('domainEditCpcode').value;
+
+        const response = await fetch('/edit_domain', {
+            method: 'POST',
+            body: new URLSearchParams(params),
+        });
+        const data = await response.json();
+        resultDiv.textContent = data.success ? data.message : data.error;
+        resultDiv.classList.remove('hidden');
+        resultDiv.classList.toggle('text-green-600', !!data.success);
+        resultDiv.classList.toggle('text-red-600', !data.success);
+        if (data.success) {
+            domainBlocksMaster = null;
+            setTimeout(() => location.reload(), 1000);
+        }
+    });
 }
 
 function initDomainsTableActions() {
     const tbody = document.getElementById('domainsTableBody');
     if (!tbody || tbody.dataset.actionsBound) return;
     tbody.dataset.actionsBound = '1';
-
-    tbody.querySelectorAll('.domain-edit-form').forEach(initDomainEditFormState);
-
-    tbody.addEventListener('change', (event) => {
-        const providerSelect = event.target.closest('.domain-edit-form [name="provider"]');
-        if (!providerSelect) return;
-        const form = providerSelect.closest('.domain-edit-form');
-        const credentialSelect = form.querySelector('[name="credential_id"]');
-        if (credentialSelect) {
-            credentialSelect.innerHTML = buildCredentialOptions(providerSelect.value, '');
-        }
-        toggleEditCpcodeField(form);
-    });
+    initDomainEditModal();
 
     tbody.addEventListener('click', async (event) => {
         const editBtn = event.target.closest('.edit-domain-btn');
         if (editBtn) {
-            const row = editBtn.closest('tr');
-            const editRow = row && row.nextElementSibling;
-            if (editRow && editRow.classList.contains('edit-row')) {
-                editRow.classList.toggle('hidden');
-                if (!editRow.classList.contains('hidden')) {
-                    const form = editRow.querySelector('.domain-edit-form');
-                    if (form) initDomainEditFormState(form);
-                }
-            }
-            return;
-        }
-
-        const cancelBtn = event.target.closest('.cancel-edit-btn');
-        if (cancelBtn) {
-            const editRow = cancelBtn.closest('.edit-row');
-            if (editRow) editRow.classList.add('hidden');
+            openDomainEditModal(editBtn.closest('tr'));
             return;
         }
 
@@ -440,60 +471,6 @@ function initDomainsTableActions() {
             } else {
                 alert('删除失败: ' + data.error);
             }
-        }
-    });
-
-    tbody.addEventListener('submit', async (event) => {
-        const form = event.target.closest('.domain-edit-form');
-        if (!form) return;
-        event.preventDefault();
-
-        const domain = form.dataset.domain;
-        const providerSelect = form.querySelector('[name="provider"]');
-        const credentialSelect = form.querySelector('[name="credential_id"]');
-        const provider = providerSelect.value;
-        const credentialId = credentialSelect.value;
-        const resultDiv = form.querySelector('.edit-result');
-        resultDiv.classList.add('hidden');
-        resultDiv.textContent = '';
-
-        const domainNameInput = form.querySelector('[name="domain_name"]');
-        const allowedUsersInput = form.querySelector('[name="allowed_users"]');
-        const projectsInput = form.querySelector('[name="projects"]');
-        const environmentsInput = form.querySelector('[name="environments"]');
-        const params = {
-            domain,
-            domain_name: domainNameInput ? domainNameInput.value : '',
-            provider,
-            credential_id: credentialId,
-            projects: projectsInput ? projectsInput.value : '',
-            environments: environmentsInput ? environmentsInput.value : '',
-        };
-        if (allowedUsersInput) {
-            params.allowed_users = allowedUsersInput.value;
-        }
-        const cpcodeInput = form.querySelector('[name="cpcode"]');
-        if (cpcodeInput && provider === 'akamai') {
-            params.cpcode = cpcodeInput.value;
-        }
-
-        const response = await fetch('/edit_domain', {
-            method: 'POST',
-            body: new URLSearchParams(params),
-        });
-        const data = await response.json();
-        if (data.success) {
-            resultDiv.textContent = data.message;
-            resultDiv.classList.remove('hidden');
-            resultDiv.classList.remove('text-red-600');
-            resultDiv.classList.add('text-green-600');
-            domainBlocksMaster = null;
-            setTimeout(() => location.reload(), 1200);
-        } else {
-            resultDiv.textContent = data.error;
-            resultDiv.classList.remove('hidden');
-            resultDiv.classList.remove('text-green-600');
-            resultDiv.classList.add('text-red-600');
         }
     });
 }
@@ -734,6 +711,54 @@ function startExistingUrlRefreshPolling() {
         }
     });
 }
+
+function renderRefreshRecords(records) {
+    const tbody = document.getElementById('refreshRecordsBody');
+    const empty = document.getElementById('refreshRecordsEmpty');
+    const summary = document.getElementById('refreshRecordsSummary');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    if (!records.length) {
+        empty?.classList.remove('hidden');
+        if (summary) summary.textContent = '暂无记录';
+        return;
+    }
+    empty?.classList.add('hidden');
+    records.forEach((item) => {
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-gray-50 transition';
+        tr.dataset.url = item.url || '';
+        tr.dataset.urlIdx = item.id;
+        tr.dataset.domain = item.domain || '';
+        tr.innerHTML = `
+            <td class="px-4 py-3 whitespace-nowrap text-gray-700">${item.domain || '-'}</td>
+            <td class="px-4 py-3 max-w-md truncate" title="${item.url || ''}">${item.url || '-'}</td>
+            <td class="px-4 py-3 whitespace-nowrap text-gray-500">${item.provider_label || item.provider || '-'}</td>
+            <td class="px-4 py-3 whitespace-nowrap url-refresh-status-cell">${item.refresh_status || '-'}</td>
+            <td class="px-4 py-3 whitespace-nowrap url-time-cell">${item.completed_at || item.submitted_at || '-'}</td>`;
+        tbody.appendChild(tr);
+    });
+    if (summary) summary.textContent = `共 ${records.length} 条记录`;
+    startExistingUrlRefreshPolling();
+}
+
+async function loadRefreshRecords() {
+    const filter = document.getElementById('refreshRecordsDomainFilter');
+    const domain = filter ? filter.value : '';
+    const params = domain ? `?domain=${encodeURIComponent(domain)}` : '';
+    const response = await fetch(`/api/refresh_records${params}`);
+    const data = await response.json();
+    if (!data.success) {
+        alert(data.error || '加载刷新记录失败');
+        return;
+    }
+    renderRefreshRecords(data.records || []);
+}
+
+const refreshRecordsFilter = document.getElementById('refreshRecordsDomainFilter');
+const refreshRecordsReloadBtn = document.getElementById('refreshRecordsReloadBtn');
+refreshRecordsFilter?.addEventListener('change', () => loadRefreshRecords());
+refreshRecordsReloadBtn?.addEventListener('click', () => loadRefreshRecords());
 
 startExistingRefreshPolling();
 startExistingUrlRefreshPolling();

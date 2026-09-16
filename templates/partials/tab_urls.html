@@ -1,31 +1,50 @@
 <div id="tab-urls" class="tab-panel hidden">
-    <div class="bg-white rounded-lg shadow-md p-6">
-        <h2 class="text-xl font-semibold mb-4 text-gray-800">最近 20 条 URL 记录</h2>
-        {% if latest_urls %}
+    <div class="bg-white rounded-xl shadow-md p-5 md:p-6">
+        <div class="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-4">
+            <div>
+                <h2 class="text-xl font-semibold text-gray-800">刷新记录</h2>
+                <p class="text-sm text-gray-500 mt-1">每个域名保留最近 10 条记录</p>
+            </div>
+            <div class="flex flex-wrap items-center gap-3">
+                <label class="flex items-center gap-2 text-sm text-gray-600">
+                    <span>域名</span>
+                    <select id="refreshRecordsDomainFilter" class="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 min-w-[12rem]">
+                        <option value="">全部域名</option>
+                        {% for domain in refresh_domain_options %}
+                        <option value="{{ domain }}">{{ domain }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <button type="button" id="refreshRecordsReloadBtn" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm">
+                    <i class="fas fa-sync-alt mr-1"></i>刷新
+                </button>
+            </div>
+        </div>
+        <div id="refreshRecordsSummary" class="text-sm text-gray-500 mb-3"></div>
         <div class="overflow-x-auto">
-            <table class="min-w-full divide-y divide-gray-200">
-                <thead>
+            <table class="min-w-full divide-y divide-gray-200 text-sm">
+                <thead class="bg-gray-50">
                     <tr>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">URL</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">提供商</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">状态</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">提交时间</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">域名</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">URL / 路径</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">提供商</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">状态</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">时间</th>
                     </tr>
                 </thead>
-                <tbody class="divide-y divide-gray-200">
-                    {% for url in latest_urls %}
-                    <tr class="hover:bg-gray-50 transition" data-url="{{ url.url or url.get('url') }}" data-url-idx="{{ url._idx }}">
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ url.url or url.get('url') or '-' }}</td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ url.provider or '-' }}</td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 url-refresh-status-cell">{{ url.refresh_status or url.get('refresh_status') or '-' }}</td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 url-time-cell">{{ url.completed_at or url.get('completed_at') or url.submitted_at or url.get('submitted_at') or '-' }}</td>
+                <tbody id="refreshRecordsBody" class="divide-y divide-gray-200">
+                    {% for item in refresh_records %}
+                    <tr class="hover:bg-gray-50 transition" data-url="{{ item.url or '' }}" data-url-idx="{{ item._idx }}" data-domain="{{ item.domain or '' }}">
+                        <td class="px-4 py-3 whitespace-nowrap text-gray-700">{{ item.domain or '-' }}</td>
+                        <td class="px-4 py-3 max-w-md truncate" title="{{ item.url or '' }}">{{ item.url or '-' }}</td>
+                        <td class="px-4 py-3 whitespace-nowrap text-gray-500">{{ provider_labels.get(item.provider, item.provider) if item.provider else '-' }}</td>
+                        <td class="px-4 py-3 whitespace-nowrap url-refresh-status-cell">{{ item.refresh_status or '-' }}</td>
+                        <td class="px-4 py-3 whitespace-nowrap url-time-cell">{{ item.completed_at or item.submitted_at or '-' }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
             </table>
         </div>
-        {% else %}
-        <p class="text-gray-500 text-center py-8">暂无 URL 记录。</p>
-        {% endif %}
+        <div id="refreshRecordsEmpty" class="hidden py-10 text-center text-gray-400 text-sm">暂无刷新记录</div>
     </div>
 </div>

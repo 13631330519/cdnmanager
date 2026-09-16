@@ -18,13 +18,13 @@
 
 | # | 模块 | 文件/路由 | 状态 |
 |---|------|-----------|------|
-| 1 | 数据模型 | `models.py` — `storage_credentials`, `storage_targets`, `upload_jobs`, `upload_files`, `upload_parts` | ✅ Phase 1 |
+| 1 | 数据模型 | `cdnmanager/db/models.py` — `storage_credentials`, `storage_targets`, `upload_jobs`, `upload_files`, `upload_parts` | ✅ Phase 1 |
 | 2 | 常量 | `common.py` — `STORAGE_PROVIDERS`, 分片阈值 | ✅ Phase 1 |
-| 3 | 存储凭据 CRUD | `storage_credentials.py`, `tab_storage_credentials.html` | ✅ Phase 1 |
-| 4 | 存储目标 CRUD | `storage_targets.py`, `tab_storage_targets.html` | ✅ Phase 1 |
-| 5 | OSS 适配 | `providers/storage_oss.py` — presign PUT/multipart, HEAD, complete | ✅ Phase 1 |
-| 6 | COS 适配 | `providers/storage_cos.py` — 同上 | ✅ Phase 1 |
-| 7 | 上传 API | `uploads.py` — Job/文件生命周期 | ✅ Phase 1 |
+| 3 | 存储凭据 CRUD | `cdnmanager/routes/storage/credentials.py`, `tab_storage_credentials.html` | ✅ Phase 1 |
+| 4 | 存储目标 CRUD | `cdnmanager/routes/storage/targets.py`, `tab_storage_targets.html` | ✅ Phase 1 |
+| 5 | OSS 适配 | `cdnmanager/providers/storage_oss.py` — presign PUT/multipart, HEAD, complete | ✅ Phase 1 |
+| 6 | COS 适配 | `cdnmanager/providers/storage_cos.py` — 同上 | ✅ Phase 1 |
+| 7 | 上传 API | `cdnmanager/routes/storage/uploads.py` — Job/文件生命周期 | ✅ Phase 1 |
 | 8 | 上传 UI | `tab_upload.html`, `static/js/upload.js` | ✅ Phase 1 |
 | 9 | 导航集成 | `base.html`, `index.html`, `app.py` | ✅ Phase 1 |
 | 10 | 依赖 | `oss2`, `cos-python-sdk-v5` | ✅ Phase 1 |
