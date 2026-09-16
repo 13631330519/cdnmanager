@@ -32,6 +32,17 @@ def create_app():
     register_blueprints(app)
     register_views(app)
 
+    @app.context_processor
+    def inject_asset_version():
+        static_root = app.static_folder or ''
+        versions = []
+        for rel_path in ('js/app.js', 'js/upload.js', 'css/layout.css'):
+            try:
+                versions.append(int(os.path.getmtime(os.path.join(static_root, *rel_path.split('/')))))
+            except OSError:
+                continue
+        return {'asset_version': max(versions) if versions else 1}
+
     if ENABLE_TASK_POLLING:
         from cdnmanager.routes.cdn.domains import start_task_polling_thread
         start_task_polling_thread()

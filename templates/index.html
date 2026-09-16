@@ -25,11 +25,11 @@
     {% if user.role == 'admin' %}
     <script id="all-projects-tree" type="application/json">{{ all_projects_tree_json | safe }}</script>
     {% endif %}
-    <script src="{{ url_for('static', filename='js/tabs.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/tabs.js') }}?v={{ asset_version }}"></script>
+    <script src="{{ url_for('static', filename='js/app.js') }}?v={{ asset_version }}"></script>
     {% if user.role == 'admin' %}
-    <script src="{{ url_for('static', filename='js/projects.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/projects.js') }}?v={{ asset_version }}"></script>
     {% endif %}
-    <script src="{{ url_for('static', filename='js/upload-idb.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/upload.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/upload-idb.js') }}?v={{ asset_version }}"></script>
+    <script src="{{ url_for('static', filename='js/upload.js') }}?v={{ asset_version }}"></script>
 {% endblock %}

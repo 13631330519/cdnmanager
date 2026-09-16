@@ -1,9 +1,17 @@
-const providerCredentialsEl = document.getElementById('provider-credentials');
-const providerCredentials = providerCredentialsEl
-    ? JSON.parse(providerCredentialsEl.textContent)
-    : {};
+function parseJsonScript(id, fallback) {
+    const el = document.getElementById(id);
+    if (!el) return fallback;
+    try {
+        return JSON.parse(el.textContent || 'null') ?? fallback;
+    } catch (err) {
+        console.warn(`Failed to parse #${id}`, err);
+        return fallback;
+    }
+}
+
+const providerCredentials = parseJsonScript('provider-credentials', {});
 const projectsDataEl = document.getElementById('projects-data');
-const domainProjectsData = projectsDataEl ? JSON.parse(projectsDataEl.textContent) : [];
+const domainProjectsData = parseJsonScript('projects-data', []);
 
 function fillProjectSelect(selectEl, selectedId) {
     if (!selectEl) return;
@@ -126,6 +134,93 @@ function initCredentialAdminForms() {
             if (data.success) location.reload();
             else alert(data.error || '删除失败');
         });
+    });
+
+    document.addEventListener('click', async (event) => {
+        const saveBtn = event.target.closest('.save-storage-credential-btn');
+        if (saveBtn) {
+            event.preventDefault();
+            const form = saveBtn.closest('.save-storage-credential-form');
+            if (!form || saveBtn.disabled) return;
+
+            const resultDiv = form.querySelector('.storage-credential-result');
+            saveBtn.disabled = true;
+            try {
+                const response = await fetch('/save_storage_credential', {
+                    method: 'POST',
+                    body: new URLSearchParams(new FormData(form)),
+                });
+                const data = await response.json();
+                resultDiv.textContent = data.success ? data.message : data.error;
+                resultDiv.classList.remove('hidden');
+                resultDiv.classList.toggle('text-green-600', !!data.success);
+                resultDiv.classList.toggle('text-red-600', !data.success);
+                if (data.success) setTimeout(() => location.reload(), 1200);
+            } catch (err) {
+                resultDiv.textContent = `请求失败: ${err.message}`;
+                resultDiv.classList.remove('hidden');
+                resultDiv.classList.add('text-red-600');
+            } finally {
+                saveBtn.disabled = false;
+            }
+            return;
+        }
+
+        const deleteBtn = event.target.closest('.delete-storage-credential-btn');
+        if (deleteBtn) {
+            event.preventDefault();
+            if (!confirm('确认删除该存储凭据？')) return;
+            const response = await fetch('/delete_storage_credential', {
+                method: 'POST',
+                body: new URLSearchParams({
+                    provider: deleteBtn.dataset.provider,
+                    credential_id: deleteBtn.dataset.credentialId,
+                }),
+            });
+            const data = await response.json();
+            if (data.success) location.reload();
+            else alert(data.error || '删除失败');
+        }
+    });
+
+    document.addEventListener('submit', async (event) => {
+        const form = event.target;
+        if (!(form instanceof HTMLFormElement)) return;
+
+        if (form.classList.contains('save-storage-credential-form')) {
+            event.preventDefault();
+            form.querySelector('.save-storage-credential-btn')?.click();
+            return;
+        }
+
+        if (form.id === 'storageTargetForm') {
+            event.preventDefault();
+            const resultDiv = document.getElementById('storageTargetResult');
+            const submitBtn = form.querySelector('button[type="submit"]');
+            if (submitBtn?.disabled) return;
+            if (submitBtn) submitBtn.disabled = true;
+            resultDiv?.classList.add('hidden');
+            try {
+                const response = await fetch('/save_storage_target', {
+                    method: 'POST',
+                    body: new URLSearchParams(new FormData(form)),
+                });
+                const data = await response.json();
+                resultDiv.textContent = data.success
+                    ? (data.cors_warning ? `${data.message}（${data.cors_warning}）` : data.message)
+                    : data.error;
+                resultDiv.classList.remove('hidden');
+                resultDiv.classList.toggle('text-green-600', !!data.success);
+                resultDiv.classList.toggle('text-red-600', !data.success);
+                if (data.success) setTimeout(() => location.reload(), 1200);
+            } catch (err) {
+                resultDiv.textContent = `请求失败: ${err.message}`;
+                resultDiv.classList.remove('hidden');
+                resultDiv.classList.add('text-red-600');
+            } finally {
+                if (submitBtn) submitBtn.disabled = false;
+            }
+        }
     });
 }
 
@@ -946,8 +1041,7 @@ if (refreshRecordsProjectFilter && domainProjectsData.length) {
 startExistingRefreshPolling();
 startExistingUrlRefreshPolling();
 
-const dnsCredentialsEl = document.getElementById('dns-credentials');
-const dnsCredentials = dnsCredentialsEl ? JSON.parse(dnsCredentialsEl.textContent) : {};
+const dnsCredentials = parseJsonScript('dns-credentials', {});
 
 function buildDnsCredentialOptions(provider, selectedId) {
     const creds = dnsCredentials[provider] || [];

@@ -9,43 +9,25 @@
     const MAX_PART_CONCURRENCY = 6;
 
     function initStorageAdminForms() {
-        document.querySelectorAll('.save-storage-credential-form').forEach((form) => {
-            form.addEventListener('submit', async (e) => {
-                e.preventDefault();
-                const resultDiv = form.querySelector('.storage-credential-result');
-                resultDiv.classList.add('hidden');
-                const response = await fetch('/save_storage_credential', { method: 'POST', body: new URLSearchParams(new FormData(form)) });
-                const data = await response.json();
-                resultDiv.textContent = data.success ? data.message : data.error;
-                resultDiv.classList.remove('hidden');
-                resultDiv.classList.toggle('text-green-600', !!data.success);
-                resultDiv.classList.toggle('text-red-600', !data.success);
-                if (data.success) setTimeout(() => location.reload(), 1200);
-            });
-        });
-
-        document.querySelectorAll('.delete-storage-credential-btn').forEach((btn) => {
-            btn.addEventListener('click', async () => {
-                if (!confirm('确认删除该存储凭据？')) return;
-                const response = await fetch('/delete_storage_credential', {
-                    method: 'POST',
-                    body: new URLSearchParams({ provider: btn.dataset.provider, credential_id: btn.dataset.credentialId }),
-                });
-                const data = await response.json();
-                if (data.success) location.reload();
-                else alert(data.error || '删除失败');
-            });
-        });
-
         const storageTargetForm = document.getElementById('storageTargetForm');
         const storageTargetProvider = document.getElementById('storageTargetProvider');
         const storageTargetCredential = document.getElementById('storageTargetCredential');
         const storageTargetProject = document.getElementById('storageTargetProject');
         const storageTargetEnvironment = document.getElementById('storageTargetEnvironment');
-        const storageCredentialsEl = document.getElementById('storage-credentials');
-        const storageCredentials = storageCredentialsEl ? JSON.parse(storageCredentialsEl.textContent) : {};
-        const allProjectsTreeEl = document.getElementById('all-projects-tree');
-        const allProjectsTree = allProjectsTreeEl ? JSON.parse(allProjectsTreeEl.textContent || '[]') : [];
+        let storageCredentials = {};
+        let allProjectsTree = [];
+        try {
+            const storageCredentialsEl = document.getElementById('storage-credentials');
+            storageCredentials = storageCredentialsEl ? JSON.parse(storageCredentialsEl.textContent || '{}') : {};
+        } catch (err) {
+            console.warn('Failed to parse #storage-credentials', err);
+        }
+        try {
+            const allProjectsTreeEl = document.getElementById('all-projects-tree');
+            allProjectsTree = allProjectsTreeEl ? JSON.parse(allProjectsTreeEl.textContent || '[]') : [];
+        } catch (err) {
+            console.warn('Failed to parse #all-projects-tree', err);
+        }
 
         function fillStorageTargetEnvironmentOptions(projectId, selectedId) {
             if (!storageTargetEnvironment) return;
@@ -94,19 +76,6 @@
                 if (allowDelete) allowDelete.checked = row.dataset.allowUserDelete === '1';
                 storageTargetForm.scrollIntoView({ behavior: 'smooth', block: 'start' });
             });
-        });
-
-        storageTargetForm?.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const resultDiv = document.getElementById('storageTargetResult');
-            resultDiv.classList.add('hidden');
-            const response = await fetch('/save_storage_target', { method: 'POST', body: new URLSearchParams(new FormData(storageTargetForm)) });
-            const data = await response.json();
-            resultDiv.textContent = data.success ? (data.cors_warning ? `${data.message}（${data.cors_warning}）` : data.message) : data.error;
-            resultDiv.classList.remove('hidden');
-            resultDiv.classList.toggle('text-green-600', !!data.success);
-            resultDiv.classList.toggle('text-red-600', !data.success);
-            if (data.success) setTimeout(() => location.reload(), 1200);
         });
 
         document.querySelectorAll('.delete-storage-target-btn').forEach((btn) => {
