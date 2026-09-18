@@ -10,6 +10,7 @@ Design goals:
 import os
 import posixpath
 import tempfile
+import ssl
 from ftplib import FTP, FTP_TLS
 from urllib.parse import urlsplit
 
@@ -72,7 +73,7 @@ def _normalize_dir(path):
 def _ftp_client(credential, config, provider):
     host, port, root, scheme = _provider_config(config, provider)
     if provider == 'ftps':
-        ftp = FTP_TLS()
+        ftp = FTP_TLS(context=ssl._create_unverified_context())
         ftp.connect(host, port, timeout=15)
         ftp.login(credential['access_key'], credential['secret_key'])
         ftp.prot_p()
