@@ -158,6 +158,8 @@
         remotePath: document.getElementById('remotePathInput'),
         remoteBrowse: document.getElementById('remoteBrowseBtn'),
         remoteUp: document.getElementById('remoteUpBtn'),
+        remoteMkdir: document.getElementById('remoteMkdirBtn'),
+        remoteRename: document.getElementById('remoteRenameBtn'),
         remoteDownload: document.getElementById('remoteDownloadBtn'),
         remoteDelete: document.getElementById('remoteDeleteBtn'),
         remoteSelectAll: document.getElementById('remoteSelectAll'),
@@ -331,6 +333,7 @@
         const checked = els.remoteList.querySelectorAll('.remote-check:checked');
         const has = checked.length > 0;
         els.remoteDownload.disabled = !has;
+        els.remoteRename.disabled = !(has && checked.length === 1);
         els.remoteDelete.disabled = !has || !state.canDelete;
     }
 
@@ -785,6 +788,34 @@
         await loadRemoteList();
     }
 
+    async function mkdirSelectedRemote() {
+        const folderName = window.prompt('请输入新文件夹名称：');
+        if (!folderName || !folderName.trim()) return;
+        const name = folderName.trim();
+        await fetchJson('/api/storage/mkdir', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ target_id: els.target.value, directory_name: `${els.remotePath.value || ''}${name}` }),
+        });
+        await loadRemoteList();
+    }
+
+    async function renameSelectedRemote() {
+        const checked = [...els.remoteList.querySelectorAll('.remote-check:checked')];
+        const item = checked.length === 1 ? checked[0] : null;
+        if (!item) return;
+        const currentName = item.dataset.type === 'file' ? item.dataset.key : item.dataset.prefix;
+        const nextName = window.prompt('请输入新名称：', currentName.split('/').filter(Boolean).pop() || '');
+        if (!nextName || !nextName.trim()) return;
+        const oldKey = item.dataset.type === 'file' ? item.dataset.key : item.dataset.prefix;
+        await fetchJson('/api/storage/rename', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ target_id: els.target.value, old_key: oldKey, new_name: `${(els.remotePath.value || '').replace(/\/+$/, '')}/${nextName.trim()}` }),
+        });
+        await loadRemoteList();
+    }
+
     els.remoteBrowse?.addEventListener('click', () => loadRemoteList());
     els.target?.addEventListener('change', () => loadRemoteList());
     els.remoteUp?.addEventListener('click', () => {
@@ -793,6 +824,8 @@
         els.remotePath.value = parts.length ? `${parts.join('/')}/` : '';
         loadRemoteList();
     });
+    els.remoteMkdir?.addEventListener('click', () => mkdirSelectedRemote().catch((e) => alert(e.message)));
+    els.remoteRename?.addEventListener('click', () => renameSelectedRemote().catch((e) => alert(e.message)));
     els.remoteDownload?.addEventListener('click', () => downloadSelectedRemote().catch((e) => alert(e.message)));
     els.remoteDelete?.addEventListener('click', () => deleteSelectedRemote().catch((e) => alert(e.message)));
     els.remoteSelectAll?.addEventListener('change', () => {

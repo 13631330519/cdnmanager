@@ -1,3 +1,5 @@
+from urllib.parse import quote
+
 from flask import Blueprint, jsonify, request, session
 
 from cdnmanager.common import can_storage_delete
@@ -69,7 +71,7 @@ def storage_download_urls():
     if len(keys) > 100:
         return jsonify({'error': '单次最多下载 100 个文件'}), 400
 
-    _user, _target, ctx, err, status = _target_context(target_id)
+    _user, target, ctx, err, status = _target_context(target_id)
     if err:
         return err, status
     credential, config, adapter = ctx
@@ -77,14 +79,110 @@ def storage_download_urls():
     urls = []
     for key in keys:
         try:
+            if target['provider'] in {'ftp', 'sftp', 'ftps'}:
+                url = f"/api/storage/proxy-download?target_id={quote(target_id)}&key={quote(key)}"
+            else:
+                url = adapter.presign_get(credential, config, key)
             urls.append({
                 'key': key,
-                'url': adapter.presign_get(credential, config, key),
+                'url': url,
             })
         except Exception as exc:
             return jsonify({'error': f'生成下载链接失败: {exc}'}), 400
 
     return jsonify({'success': True, 'urls': urls})
+
+
+@storage_browser_bp.route('/api/storage/proxy-download', methods=['GET'])
+def storage_proxy_download():
+    target_id = request.args.get('target_id', '').strip()
+    key = request.args.get('key', '').strip()
+    if not target_id or not key:
+        return jsonify({'error': 'target_id 与 key 必填'}), 400
+
+    _user, target, ctx, err, status = _target_context(target_id)
+    if err:
+        return err, status
+    if target['provider'] not in {'ftp', 'sftp', 'ftps'}:
+        return jsonify({'error': '仅对 FTP/SFTP/FTPS 目标开放代理下载'}), 400
+
+    credential, config, adapter = ctx
+    range_header = request.headers.get('Range')
+    return adapter.stream_download(credential, config, key, range_header=range_header)
+
+
+@storage_browser_bp.route('/api/storage/upload', methods=['POST'])
+def storage_upload_objects():
+    target_id = request.form.get('target_id', '').strip()
+    remote_prefix = request.form.get('prefix', '').strip()
+    resume_from = int(request.form.get('resume_from', '0') or '0')
+    if not target_id:
+        return jsonify({'error': 'target_id 必填'}), 400
+    if 'file' not in request.files:
+        return jsonify({'error': 'file 必填'}), 400
+
+    user, target, ctx, err, status = _target_context(target_id)
+    if err:
+        return err, status
+    if target['provider'] not in {'ftp', 'sftp', 'ftps'}:
+        return jsonify({'error': '仅对 FTP/SFTP/FTPS 目标开放代理上传'}), 400
+
+    credential, config, adapter = ctx
+    uploaded = request.files['file']
+    try:
+        result = adapter.upload_file(credential, config, remote_prefix, uploaded, resume_from=resume_from)
+    except Exception as exc:
+        return jsonify({'error': f'上传失败: {exc}'}), 400
+    return jsonify({'success': True, 'result': result})
+
+
+@storage_browser_bp.route('/api/storage/mkdir', methods=['POST'])
+def storage_mkdir():
+    data = request.get_json(silent=True) or {}
+    target_id = (data.get('target_id') or '').strip()
+    directory_name = (data.get('directory_name') or '').strip()
+    if not target_id or not directory_name:
+        return jsonify({'error': 'target_id 与 directory_name 必填'}), 400
+
+    user, target, ctx, err, status = _target_context(target_id)
+    if err:
+        return err, status
+    if not can_storage_delete(user, target):
+        return jsonify({'error': '无创建权限'}), 403
+    if target['provider'] not in {'ftp', 'sftp', 'ftps'}:
+        return jsonify({'error': '仅对 FTP/SFTP/FTPS 目标开放目录创建'}), 400
+
+    credential, config, adapter = ctx
+    try:
+        result = adapter.mkdir(credential, config, directory_name)
+    except Exception as exc:
+        return jsonify({'error': f'新建目录失败: {exc}'}), 400
+    return jsonify({'success': True, 'result': result})
+
+
+@storage_browser_bp.route('/api/storage/rename', methods=['POST'])
+def storage_rename():
+    data = request.get_json(silent=True) or {}
+    target_id = (data.get('target_id') or '').strip()
+    old_key = (data.get('old_key') or '').strip()
+    new_name = (data.get('new_name') or '').strip()
+    if not target_id or not old_key or not new_name:
+        return jsonify({'error': 'target_id、old_key、new_name 必填'}), 400
+
+    user, target, ctx, err, status = _target_context(target_id)
+    if err:
+        return err, status
+    if not can_storage_delete(user, target):
+        return jsonify({'error': '无重命名权限'}), 403
+    if target['provider'] not in {'ftp', 'sftp', 'ftps'}:
+        return jsonify({'error': '仅对 FTP/SFTP/FTPS 目标开放重命名'}), 400
+
+    credential, config, adapter = ctx
+    try:
+        result = adapter.rename(credential, config, old_key, new_name)
+    except Exception as exc:
+        return jsonify({'error': f'重命名失败: {exc}'}), 400
+    return jsonify({'success': True, 'result': result})
 
 
 @storage_browser_bp.route('/api/storage/delete', methods=['POST'])

@@ -1,0 +1,9 @@
+# 用户名<TAB>项目1,项目2,...<TAB>密码（密码可留空，脚本会自动生成并写回）
+huangshuai	永恒之战,启元,冰封王座,sdk	U.niuCdn2026
+chenyi	冰封王座,部落争霸,永恒之战,天堂世界,sdk	U.niuCdn2026
+wangpengcheng	冰封王座,部落争霸,永恒之站,天堂世界	U.niuCdn2026
+zhoufangsheng	猫三国	U.niuCdn2026
+hefeng	童话	U.niuCdn2026
+renyu	永恒之战,冰封王座,部落争霸,sdk	U.niuCdn2026
+wangruoyu	永恒之战,冰封王座,部落争霸,sdk	U.niuCdn2026
+huanghetao	sdk	U.niuCdn2026

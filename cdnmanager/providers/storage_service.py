@@ -1,7 +1,7 @@
 import math
 
 from cdnmanager.common import UPLOAD_MULTIPART_THRESHOLD, UPLOAD_PART_SIZE
-from cdnmanager.providers import storage_cos, storage_oss
+from cdnmanager.providers import storage_cos, storage_ftp, storage_oss
 
 
 def build_object_key(target_config, remote_prefix, relative_path):
@@ -38,6 +38,8 @@ def get_adapter(provider):
     if provider == 'oos':
         from cdnmanager.providers import storage_oos
         return storage_oos
+    if provider in {'ftp', 'sftp', 'ftps'}:
+        return storage_ftp
     raise ValueError(f'不支持的存储类型: {provider}')
 
 

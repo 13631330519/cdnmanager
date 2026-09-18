@@ -11,7 +11,7 @@ URL_FILE = os.path.join(DATA_DIR, 'urls.json')
 LOG_DIR = os.environ.get('LOG_DIR', 'logs')
 
 VALID_PROVIDERS = ['alicdn', 'tencent', 'lingzhi', 'akamai', 'ctyun', 'volcengine', 'x7host']
-STORAGE_PROVIDERS = ['oss', 'cos', 'oos']
+STORAGE_PROVIDERS = ['oss', 'cos', 'oos', 'ftp', 'sftp', 'ftps']
 DNS_PROVIDERS = ['aliyun', 'tencent']
 
 # 直传上传：超过此大小走分片（100MB）
@@ -85,6 +85,9 @@ STORAGE_PROVIDER_LABELS = {
     'oss': '阿里云 OSS',
     'cos': '腾讯云 COS',
     'oos': '天翼云 OOS',
+    'ftp': 'FTP',
+    'sftp': 'SFTP',
+    'ftps': 'FTPS',
 }
 
 STORAGE_CREDENTIAL_FIELD_LABELS = {
@@ -99,6 +102,18 @@ STORAGE_CREDENTIAL_FIELD_LABELS = {
     'oos': [
         {'name': 'access_key', 'label': 'AccessKey', 'type': 'text'},
         {'name': 'secret_key', 'label': 'SecretKey', 'type': 'password'},
+    ],
+    'ftp': [
+        {'name': 'access_key', 'label': 'FTP 用户名', 'type': 'text'},
+        {'name': 'secret_key', 'label': 'FTP 密码', 'type': 'password'},
+    ],
+    'sftp': [
+        {'name': 'access_key', 'label': 'SFTP 用户名', 'type': 'text'},
+        {'name': 'secret_key', 'label': 'SFTP 密码', 'type': 'password'},
+    ],
+    'ftps': [
+        {'name': 'access_key', 'label': 'FTPS 用户名', 'type': 'text'},
+        {'name': 'secret_key', 'label': 'FTPS 密码', 'type': 'password'},
     ],
 }
 
