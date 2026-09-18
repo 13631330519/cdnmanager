@@ -50,20 +50,6 @@ def _safe_join(base, *parts):
     path = posixpath.join(base, *[p.strip('/') for p in cleaned])
     return '/' + path.lstrip('/') if not path.startswith('/') else path
 
-
-def _remote_path(config, key=''):
-    _, _, root, _ = _provider_config(config, config.get('provider') or 'ftp')
-    root = root.strip('/')
-    key = (key or '').replace('\\', '/').strip('/')
-    if key:
-        if root and root != '/':
-            return '/' + '/'.join([p for p in [root, key] if p])
-        return '/' + key
-    if root and root != '/':
-        return '/' + root
-    return '/'
-
-
 def _normalize_dir(path):
     if not path or path == '.':
         return '/'
@@ -112,7 +98,7 @@ def _sftp_client(credential, config, provider):
 
 
 def list_objects(credential, config, prefix='', delimiter='/', max_keys=500):
-    provider = config.get('provider') or 'ftp'
+    provider = credential.get('provider') or 'ftp'
     prefix = (prefix or '').replace('\\', '/')
     root = _normalize_dir(config.get('endpoint') or config.get('root') or config.get('path') or '/')
     dir_path = _normalize_dir(prefix)
@@ -181,7 +167,7 @@ def _path_for_upload(config, key):
 
 
 def upload_file(credential, config, remote_prefix, uploaded_file, resume_from=0):
-    provider = config.get('provider') or 'ftp'
+    provider = credential.get('provider') or 'ftp'
     remote_prefix = (remote_prefix or '').replace('\\', '/').strip('/')
     remote_name = (uploaded_file.filename or 'upload.bin').replace('\\', '/')
     remote_key = _path_for_upload(config, posixpath.join(remote_prefix, remote_name) if remote_prefix else remote_name)
@@ -236,7 +222,7 @@ def upload_file(credential, config, remote_prefix, uploaded_file, resume_from=0)
 
 
 def mkdir(credential, config, directory_name):
-    provider = config.get('provider') or 'ftp'
+    provider = credential.get('provider') or 'ftp'
     remote_dir = _path_for_upload(config, directory_name)
     if provider == 'sftp':
         client, sftp, _ = _sftp_client(credential, config, provider)
@@ -254,7 +240,7 @@ def mkdir(credential, config, directory_name):
 
 
 def rename(credential, config, old_key, new_name):
-    provider = config.get('provider') or 'ftp'
+    provider = credential.get('provider') or 'ftp'
     old_path = _path_for_upload(config, old_key)
     new_path = _path_for_upload(config, new_name)
     if provider == 'sftp':
@@ -273,7 +259,7 @@ def rename(credential, config, old_key, new_name):
 
 
 def delete_objects(credential, config, keys):
-    provider = config.get('provider') or 'ftp'
+    provider = credential.get('provider') or 'ftp'
     root = _normalize_dir(config.get('endpoint') or config.get('root') or config.get('path') or '/')
     count = 0
     for key in keys:
@@ -359,7 +345,7 @@ def _stream_file_from_ftp(ftp, remote_key):
 
 
 def stream_download(credential, config, key, range_header=None):
-    provider = config.get('provider') or 'ftp'
+    provider = credential.get('provider') or 'ftp'
     remote_key = _path_for_upload(config, key)
     if provider == 'sftp':
         client, sftp, _ = _sftp_client(credential, config, provider)
@@ -428,7 +414,7 @@ def presign_get(credential, config, object_key):
 
 
 def verify_object(credential, config, object_key, expected_size):
-    provider = config.get('provider') or 'ftp'
+    provider = credential.get('provider') or 'ftp'
     remote_key = _path_for_upload(config, object_key)
     try:
         if provider == 'sftp':
