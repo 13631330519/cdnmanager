@@ -9,14 +9,14 @@
 
         <div class="space-y-8">
             <section class="border border-gray-200 rounded-xl p-4 md:p-5 bg-indigo-50/40">
-                <h3 class="text-lg font-semibold text-gray-800 mb-3">公共说明：API Key 获取</h3>
+                <h3 class="text-lg font-semibold text-gray-800 mb-3">公共说明：API_Key 获取</h3>
                 <div class="space-y-3 text-sm text-gray-700">
-                    <p>本文中的两类接口均使用同一套签名鉴权方式，优先使用“域名绑定的项目/环境 API Key”。</p>
+                    <p>本文中的两类接口均使用同一套签名鉴权方式，优先使用“域名绑定的项目/环境 API_Key”。</p>
                     <ol class="list-decimal pl-5 space-y-1">
                         <li>进入「项目管理」页面，创建项目与环境。</li>
-                        <li>在对应项目或环境中生成 <strong>API Key</strong>（推荐优先使用环境级 Key）。<mark style="color: red;"><strong>(找管理员获取)</strong></mark></li>
+                        <li>在对应项目或环境中生成 <strong>API_Key</strong>（推荐优先使用环境级 Key）。<mark style="color: red;"><strong>(找管理员获取)</strong></mark></li>
                         <li>在「域名管理」中绑定域名到同一项目/环境，确保请求中的 <code class="bg-gray-100 px-1.5 py-0.5 rounded">domain</code> 能解析到正确的密钥。</li>
-                        <li>如果项目或环境已配置独立 API Key，不能再使用公共默认 Key，否则服务端会返回 403。</li>
+                        <li>如果项目或环境已配置独立 API_Key，不能再使用公共默认 Key，否则服务端会返回 403。</li>
                     </ol>
                     <p class="text-gray-600">适用范围：URL 刷新接口与文件上传外部 API 均共用这一获取方式。</p>
                 </div>
@@ -40,7 +40,7 @@
                         </thead>
                         <tbody class="divide-y divide-gray-200 bg-white">
                             <tr>
-                                <td class="px-3 py-2">url</td>
+                                <td class="px-3 py-2">url<mark style="color: red;">(目录需以<strong>/</strong>结尾)</mark></td>
                                 <td class="px-3 py-2 text-center">是</td>
                                 <td class="px-3 py-2">要刷新的 CDN 资源 URL</td>
                             </tr>
@@ -61,7 +61,7 @@
                 <div class="mt-4">
                     <h4 class="font-medium text-gray-800 mb-2">签名规则</h4>
                     <pre class="bg-gray-900 text-gray-100 rounded-lg p-3 overflow-x-auto text-xs leading-6"><code>message = url + timestamp
-signature = hmac.sha256(EXTERNAL_API_SECRET, message).hexdigest()</code></pre>
+signature = hmac.sha256(API_Key, message).hexdigest()</code></pre>
                 </div>
 
                 <div class="mt-4">
@@ -78,8 +78,8 @@ signature = hmac.sha256(EXTERNAL_API_SECRET, message).hexdigest()</code></pre>
                 <div class="mt-4 text-sm text-gray-600">
                     <p>说明：</p>
                     <ul class="list-disc pl-5 mt-2 space-y-1">
-                        <li>请求中的 <code class="bg-gray-100 px-1.5 py-0.5 rounded">domain</code> 必须绑定到已存在的项目/环境；签名使用解析后的项目/环境 API Key。</li>
-                        <li>API Key 的获取方式见上方「公共说明：API Key 获取」。</li>
+                        <li>请求中的 <code class="bg-gray-100 px-1.5 py-0.5 rounded">domain</code> 必须绑定到已存在的项目/环境；签名使用解析后的项目/环境 API_Key。</li>
+                        <li>API_Key 的获取方式见上方「公共说明：API_Key 获取」。</li>
                         <li>服务器会记录本次 URL 刷新任务并返回刷新结果。</li>
                     </ul>
                 </div>
@@ -89,75 +89,479 @@ signature = hmac.sha256(EXTERNAL_API_SECRET, message).hexdigest()</code></pre>
                 <h3 class="text-lg font-semibold text-gray-800 mb-3">2. 文件上传外部 API 接入说明</h3>
                 <p class="text-sm text-gray-600">客户端直接向对象存储上传，服务端只负责签发 PUT URL、校验和可选 CDN 刷新；上传与刷新使用相同的 HMAC 签名鉴权模式。</p>
 
-                <div class="mt-4 space-y-4">
+                <div class="mt-5 space-y-6">
                     <div>
-                        <h4 class="font-medium text-gray-800 mb-2">核心接口</h4>
-                        <div class="overflow-x-auto">
-                            <table class="min-w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
-                                <thead class="bg-gray-50 text-left">
-                                    <tr>
-                                        <th class="px-3 py-2 font-medium text-gray-700">方法</th>
-                                        <th class="px-3 py-2 font-medium text-gray-700">路径</th>
-                                        <th class="px-3 py-2 font-medium text-gray-700">用途</th>
-                                    </tr>
-                                </thead>
-                                <tbody class="divide-y divide-gray-200 bg-white">
-                                    <tr>
-                                        <td class="px-3 py-2">POST</td>
-                                        <td class="px-3 py-2">/api/upload/init</td>
-                                        <td class="px-3 py-2">创建上传 Job，批量签发小文件 PUT URL</td>
-                                    </tr>
-                                    <tr>
-                                        <td class="px-3 py-2">POST</td>
-                                        <td class="px-3 py-2">/api/upload/presign</td>
-                                        <td class="px-3 py-2">补签未签发成功的小文件 URL</td>
-                                    </tr>
-                                    <tr>
-                                        <td class="px-3 py-2">POST</td>
-                                        <td class="px-3 py-2">/api/upload/complete</td>
-                                        <td class="px-3 py-2">确认上传完成并触发可选 CDN 刷新</td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
+                        <h4 class="font-medium text-gray-800 mb-2">架构说明</h4>
+                        <pre class="bg-gray-900 text-gray-100 rounded-lg p-3 overflow-x-auto text-xs leading-6"><code>┌─────────────┐    ① init / presign / complete     ┌──────────────┐
+│  你的服务    │ ─────────────────────────────────► │ CDN Manager  │
+└─────────────┘                                    └──────────────┘
+       │                                                    │
+       │  ② 返回预签名 PUT URL                               │ 解析域名 → 项目/环境 → 存储目标
+       ▼                                                    ▼
+┌─────────────┐    ③ PUT 文件（直传，不经 CDN Manager）   ┌──────────────┐
+│  你的服务    │ ─────────────────────────────────► │  OSS/COS/OOS │
+└─────────────┘                                    └──────────────┘
+       │
+       │  ④ complete + ETag
+       ▼
+┌─────────────┐                                    ┌──────────────┐
+│ CDN Manager │ ── 可选 CDN 刷新 ────────────────► │  CDN 边缘节点 │
+└─────────────┘                                    └──────────────┘</code></pre>
+                        <ul class="list-disc pl-5 text-sm text-gray-600 space-y-1 mt-3">
+                            <li>文件不经过 CDN Manager 服务器转发，适合大文件与批量上传。</li>
+                            <li>鉴权与 URL 刷新接口一致，基于域名 + HMAC-SHA256。</li>
+                            <li>存储目标由域名绑定的项目 / 环境自动解析，无需在请求中传 Bucket 密钥。</li>
+                        </ul>
                     </div>
 
                     <div>
-                        <h4 class="font-medium text-gray-800 mb-2">签名说明</h4>
-                        <pre class="bg-gray-900 text-gray-100 rounded-lg p-3 overflow-x-auto text-xs leading-6"><code>signature = HMAC-SHA256(secret, message).hexdigest()
+                        <h4 class="font-medium text-gray-800 mb-2">鉴权规则</h4>
+                        
+                        <pre class="bg-gray-900 text-gray-100 rounded-lg p-3 overflow-x-auto text-xs leading-6 mt-3"><code>signature = HMAC-SHA256(API_Key, message).hexdigest()
 
 # init
 message = {domain}{timestamp}
 
 # presign / complete
 message = {domain}{job_id}{timestamp}</code></pre>
+                        <p class="text-sm text-gray-600 mt-3">说明：<code class="bg-gray-100 px-1.5 py-0.5 rounded">timestamp</code> 为 Unix 秒级时间戳，允许与服务器时差 ≤ 300 秒；若项目或环境已配置独立 Key，禁止再用公共默认 Key。</p>
                     </div>
 
                     <div>
-                        <h4 class="font-medium text-gray-800 mb-2">接入前准备</h4>
-                        <ul class="list-disc pl-5 text-sm text-gray-600 space-y-1">
-                            <li>先按上方「公共说明：API Key 获取」中的步骤获取项目/环境级 API Key。</li>
-                            <li>随后绑定域名到同一项目/环境，并确保存储目标和域名配置一致。</li>
+                        <h4 class="font-medium text-gray-800 mb-2">接口一览</h4>
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
+                                <thead class="bg-gray-50 text-left">
+                                    <tr>
+                                        <th class="px-3 py-2 font-medium text-gray-700">方法</th>
+                                        <th class="px-3 py-2 font-medium text-gray-700">路径</th>
+                                        <th class="px-3 py-2 font-medium text-gray-700">说明</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-gray-200 bg-white">
+                                    <tr>
+                                        <td class="px-3 py-2">POST</td>
+                                        <td class="px-3 py-2">/api/upload/init</td>
+                                        <td class="px-3 py-2">创建上传 Job，登记文件清单并批量签发小文件 PUT URL</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="px-3 py-2">POST</td>
+                                        <td class="px-3 py-2">/api/upload/presign</td>
+                                        <td class="px-3 py-2">为未签发成功的小文件补签 PUT URL</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="px-3 py-2">POST</td>
+                                        <td class="px-3 py-2">/api/upload/complete</td>
+                                        <td class="px-3 py-2">确认上传完成、服务端校验并可选触发 CDN 刷新</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <p class="text-sm text-gray-600 mt-3">公共约定：<code class="bg-gray-100 px-1.5 py-0.5 rounded">Content-Type: application/json</code>；JSON 响应中 <code class="bg-gray-100 px-1.5 py-0.5 rounded">success</code> 表示执行结果，HTTP 4xx/5xx 时 body 可解析为错误对象。</p>
+                    </div>
+
+                    <div>
+                        <h4 class="font-medium text-gray-800 mb-2">1） 创建上传任务 — POST /api/upload/init</h4>
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
+                                <thead class="bg-gray-50 text-left">
+                                    <tr>
+                                        <th class="px-3 py-2 font-medium text-gray-700">字段</th>
+                                        <th class="px-3 py-2 font-medium text-gray-700">类型</th>
+                                        <th class="px-3 py-2 font-medium text-gray-700">必填</th>
+                                        <th class="px-3 py-2 font-medium text-gray-700">说明</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-gray-200 bg-white">
+                                    <tr>
+                                        <td class="px-3 py-2">domain</td>
+                                        <td class="px-3 py-2">string</td>
+                                        <td class="px-3 py-2">是</td>
+                                        <td class="px-3 py-2">已绑定的 CDN 域名</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="px-3 py-2">timestamp</td>
+                                        <td class="px-3 py-2">int/string</td>
+                                        <td class="px-3 py-2">是</td>
+                                        <td class="px-3 py-2">Unix 秒</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="px-3 py-2">signature</td>
+                                        <td class="px-3 py-2">string</td>
+                                        <td class="px-3 py-2">是</td>
+                                        <td class="px-3 py-2">见签名说明中 init 消息拼接规则</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="px-3 py-2">files</td>
+                                        <td class="px-3 py-2">array</td>
+                                        <td class="px-3 py-2">是</td>
+                                        <td class="px-3 py-2">文件清单，元素包含 relative_path / size / mime</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="px-3 py-2">remote_prefix</td>
+                                        <td class="px-3 py-2">string</td>
+                                        <td class="px-3 py-2">否</td>
+                                        <td class="px-3 py-2">对象存储前缀，如 2026/09/，不要前导 /</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="px-3 py-2">storage_target_id</td>
+                                        <td class="px-3 py-2">string</td>
+                                        <td class="px-3 py-2">否</td>
+                                        <td class="px-3 py-2">指定存储目标；不传则用环境下第一个</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="px-3 py-2">refresh_after</td>
+                                        <td class="px-3 py-2">bool/int</td>
+                                        <td class="px-3 py-2">否</td>
+                                        <td class="px-3 py-2">为 true / 1 时，complete 成功后执行 CDN 刷新</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <p class="text-sm text-gray-600 mt-3">文件对象字段：<code class="bg-gray-100 px-1.5 py-0.5 rounded">relative_path</code>（相对路径，如 assets/app.js），<code class="bg-gray-100 px-1.5 py-0.5 rounded">size</code>（字节数），<code class="bg-gray-100 px-1.5 py-0.5 rounded">mime</code>（可选，默认 application/octet-stream）。首批最多 1000 个文件。</p>
+                        <pre class="bg-gray-900 text-gray-100 rounded-lg p-3 overflow-x-auto text-xs leading-6 mt-3"><code>{
+  "success": true,
+  "job_id": "a1b2c3d4e5f67890",
+  "domain": "cdn.example.com",
+  "storage_target_id": "st_oss_prod",
+  "files": [
+    {
+      "id": "f001abc123456789",
+      "relative_path": "assets/logo.png",
+      "size": 204800,
+      "multipart": false
+    }
+  ],
+  "presigned": [
+    {
+      "file_id": "f001abc123456789",
+      "mode": "put",
+      "upload_url": "https://bucket.oss-cn-hangzhou.aliyuncs.com/...",
+      "method": "PUT"
+    }
+  ],
+  "presign_errors": []
+}</code></pre>
+                        <p class="text-sm text-gray-600 mt-3">说明：单文件 ≤ 100MB 时自动签发 PUT URL；<code class="bg-gray-100 px-1.5 py-0.5 rounded">multipart: true</code> 表示大文件，当前外部 API 不支持大文件分片。若未配置存储目标，接口会返回错误。</p>
+                    </div>
+
+                    <div>
+                        <h4 class="font-medium text-gray-800 mb-2">2） 补签 PUT URL — POST /api/upload/presign</h4>
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
+                                <thead class="bg-gray-50 text-left">
+                                    <tr>
+                                        <th class="px-3 py-2 font-medium text-gray-700">字段</th>
+                                        <th class="px-3 py-2 font-medium text-gray-700">必填</th>
+                                        <th class="px-3 py-2 font-medium text-gray-700">说明</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-gray-200 bg-white">
+                                    <tr>
+                                        <td class="px-3 py-2">domain</td>
+                                        <td class="px-3 py-2">是</td>
+                                        <td class="px-3 py-2">同 init</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="px-3 py-2">job_id</td>
+                                        <td class="px-3 py-2">是</td>
+                                        <td class="px-3 py-2">init 返回的 Job ID</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="px-3 py-2">timestamp</td>
+                                        <td class="px-3 py-2">是</td>
+                                        <td class="px-3 py-2">Unix 秒</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="px-3 py-2">signature</td>
+                                        <td class="px-3 py-2">是</td>
+                                        <td class="px-3 py-2">按任务消息规则签名</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="px-3 py-2">file_ids</td>
+                                        <td class="px-3 py-2">是</td>
+                                        <td class="px-3 py-2">待补签文件 ID 列表，最多 50 个</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <pre class="bg-gray-900 text-gray-100 rounded-lg p-3 overflow-x-auto text-xs leading-6 mt-3"><code>{
+  "success": true,
+  "files": [
+    {
+      "file_id": "f001abc123456789",
+      "mode": "put",
+      "upload_url": "https://...",
+      "method": "PUT"
+    }
+  ],
+  "errors": []
+}</code></pre>
+                    </div>
+
+                    <div>
+                        <h4 class="font-medium text-gray-800 mb-2">3） 直传对象存储</h4>
+                        <pre class="bg-gray-900 text-gray-100 rounded-lg p-3 overflow-x-auto text-xs leading-6"><code>PUT {upload_url} HTTP/1.1
+Content-Type: application/octet-stream
+Content-Length: {size}
+
+{文件二进制内容}</code></pre>
+                        <ul class="list-disc pl-5 text-sm text-gray-600 space-y-1 mt-3">
+                            <li>必须使用 PUT，而不是 POST 表单上传。</li>
+                            <li>请求体大小必须与 init 中登记的 size 一致，否则 complete 校验失败。</li>
+                            <li>读取响应头中的 ETag，并去掉首尾双引号后上报给 complete。</li>
+                            <li>预签名 URL 有效期约 3600 秒，建议在过期前完成上传。</li>
                         </ul>
                     </div>
 
                     <div>
-                        <h4 class="font-medium text-gray-800 mb-2">上传流程</h4>
-                        <ol class="list-decimal pl-5 text-sm text-gray-600 space-y-1">
-                            <li>调用 <code class="bg-gray-100 px-1.5 py-0.5 rounded">/api/upload/init</code> 创建 Job，并拿到 <code class="bg-gray-100 px-1.5 py-0.5 rounded">upload_url</code>。</li>
-                            <li>使用 PUT 请求将文件直接上传到对象存储，并读取响应头中的 ETag。</li>
-                            <li>调用 <code class="bg-gray-100 px-1.5 py-0.5 rounded">/api/upload/complete</code> 上报 <code class="bg-gray-100 px-1.5 py-0.5 rounded">etag</code> 与 <code class="bg-gray-100 px-1.5 py-0.5 rounded">job_id</code>。</li>
-                            <li>如设置 <code class="bg-gray-100 px-1.5 py-0.5 rounded">refresh_after</code>，服务器会在完成后执行 CDN 刷新。</li>
-                        </ol>
+                        <h4 class="font-medium text-gray-800 mb-2">4） 完成上传 — POST /api/upload/complete</h4>
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
+                                <thead class="bg-gray-50 text-left">
+                                    <tr>
+                                        <th class="px-3 py-2 font-medium text-gray-700">字段</th>
+                                        <th class="px-3 py-2 font-medium text-gray-700">必填</th>
+                                        <th class="px-3 py-2 font-medium text-gray-700">说明</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-gray-200 bg-white">
+                                    <tr>
+                                        <td class="px-3 py-2">domain</td>
+                                        <td class="px-3 py-2">是</td>
+                                        <td class="px-3 py-2">同 init</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="px-3 py-2">job_id</td>
+                                        <td class="px-3 py-2">是</td>
+                                        <td class="px-3 py-2">Job ID</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="px-3 py-2">file_id</td>
+                                        <td class="px-3 py-2">是</td>
+                                        <td class="px-3 py-2">文件 ID</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="px-3 py-2">timestamp</td>
+                                        <td class="px-3 py-2">是</td>
+                                        <td class="px-3 py-2">Unix 秒</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="px-3 py-2">signature</td>
+                                        <td class="px-3 py-2">是</td>
+                                        <td class="px-3 py-2">任务消息签名</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="px-3 py-2">etag</td>
+                                        <td class="px-3 py-2">否</td>
+                                        <td class="px-3 py-2">PUT 返回的 ETag；不传时服务端会自动 HEAD 获取</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <pre class="bg-gray-900 text-gray-100 rounded-lg p-3 overflow-x-auto text-xs leading-6 mt-3"><code>{
+  "success": true,
+  "etag": "d41d8cd98f00b204e9800998ecf8427e",
+  "public_url": "https://cdn.example.com/2026/09/assets/logo.png",
+  "refresh": {
+    "success": true,
+    "refreshed": 1,
+    "failed": 0,
+    "results": [
+      {
+        "domain": "cdn.example.com",
+        "url": "https://cdn.example.com/2026/09/assets/logo.png",
+        "success": true
+      }
+    ]
+  }
+}</code></pre>
                     </div>
 
                     <div>
-                        <h4 class="font-medium text-gray-800 mb-2">常见限制</h4>
-                        <ul class="list-disc pl-5 text-sm text-gray-600 space-y-1">
-                            <li>单批 <code class="bg-gray-100 px-1.5 py-0.5 rounded">init</code> 最多 1000 个文件；补签单次最多 50 个。</li>
-                            <li>单文件 PUT 上限约 100 MB；大文件请走后台文件存储页或拆分。</li>
-                            <li>时间戳有效窗口通常为 ±300 秒，签名过期会被拒绝。</li>
-                            <li>外部 API 不提供 Job 进度查询，需自行跟踪 <code class="bg-gray-100 px-1.5 py-0.5 rounded">job_id</code>。</li>
+                        <h4 class="font-medium text-gray-800 mb-2">5）完整流程示例（Python）</h4>
+                        <pre class="bg-gray-900 text-gray-100 rounded-lg p-3 overflow-x-auto text-xs leading-6"><code>import hashlib
+import hmac
+import json
+import time
+import urllib.request
+
+BASE = "https://cdn-manager.example.com"
+DOMAIN = "cdn.example.com"
+API_SECRET = "your-environment-or-project-api-key"
+
+
+def sign_init(domain: str):
+    ts = int(time.time())
+    message = f"{domain}{ts}"
+    sig = hmac.new(API_SECRET.encode(), message.encode(), hashlib.sha256).hexdigest()
+    return ts, sig
+
+
+def sign_job(domain: str, job_id: str):
+    ts = int(time.time())
+    message = f"{domain}{job_id}{ts}"
+    sig = hmac.new(API_SECRET.encode(), message.encode(), hashlib.sha256).hexdigest()
+    return ts, sig
+
+
+def post(path: str, payload: dict) -> dict:
+    req = urllib.request.Request(
+        f"{BASE}{path}",
+        data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        return json.load(resp)
+
+
+def upload_file(local_path: str, remote_path: str, refresh: bool = True) -> dict:
+    with open(local_path, "rb") as f:
+        f.seek(0, 2)
+        size = f.tell()
+
+    ts, sig = sign_init(DOMAIN)
+    init_body = {
+        "domain": DOMAIN,
+        "timestamp": ts,
+        "signature": sig,
+        "remote_prefix": "2026/09/",
+        "refresh_after": refresh,
+        "files": [
+            {"relative_path": remote_path, "size": size, "mime": "application/octet-stream"}
+        ],
+    }
+    init = post("/api/upload/init", init_body)
+    if not init.get("success"):
+        raise RuntimeError(init.get("error"))
+
+    job_id = init["job_id"]
+    file_id = init["files"][0]["id"]
+    presigned = init.get("presigned") or []
+
+    if not presigned:
+        ts2, sig2 = sign_job(DOMAIN, job_id)
+        presign = post("/api/upload/presign", {
+            "domain": DOMAIN,
+            "job_id": job_id,
+            "timestamp": ts2,
+            "signature": sig2,
+            "file_ids": [file_id],
+        })
+        presigned = presign.get("files") or []
+
+    upload_url = presigned[0]["upload_url"]
+    with open(local_path, "rb") as f:
+        data = f.read()
+    put_req = urllib.request.Request(upload_url, data=data, method="PUT")
+    with urllib.request.urlopen(put_req, timeout=300) as put_resp:
+        etag = put_resp.headers.get("ETag", "").strip('"')
+
+    ts3, sig3 = sign_job(DOMAIN, job_id)
+    return post("/api/upload/complete", {
+        "domain": DOMAIN,
+        "job_id": job_id,
+        "file_id": file_id,
+        "timestamp": ts3,
+        "signature": sig3,
+        "etag": etag,
+    })
+
+
+if __name__ == "__main__":
+    result = upload_file("./logo.png", "assets/logo.png")
+    print(json.dumps(result, ensure_ascii=False, indent=2))</code></pre>
+                    </div>
+
+                    <div>
+                        <h4 class="font-medium text-gray-800 mb-2">cURL 示例</h4>
+                        <div class="space-y-4">
+                            <div>
+                                <p class="font-medium text-gray-700 mb-2">init</p>
+                                <pre class="bg-gray-900 text-gray-100 rounded-lg p-3 overflow-x-auto text-xs leading-6"><code>TS=$(date +%s)
+DOMAIN="cdn.example.com"
+SECRET="your-api-key"
+MSG="${DOMAIN}${TS}"
+SIG=$(printf '%s' "$MSG" | openssl dgst -sha256 -hmac "$SECRET" | awk '{print $2}')
+
+curl -sS -X POST "https://cdn-manager.example.com/api/upload/init" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"domain\": \"$DOMAIN\",
+    \"timestamp\": $TS,
+    \"signature\": \"$SIG\",
+    \"remote_prefix\": \"2026/09/\",
+    \"refresh_after\": true,
+    \"files\": [{\"relative_path\": \"test/hello.txt\", \"size\": 12}]
+  }"</code></pre>
+                            </div>
+                            <div>
+                                <p class="font-medium text-gray-700 mb-2">PUT（将 {upload_url} 替换为上一步返回值）</p>
+                                <pre class="bg-gray-900 text-gray-100 rounded-lg p-3 overflow-x-auto text-xs leading-6"><code>curl -sS -X PUT "{upload_url}" \
+  -H "Content-Type: application/octet-stream" \
+  --data-binary "hello world!"
+# 记录响应头 ETag</code></pre>
+                            </div>
+                            <div>
+                                <p class="font-medium text-gray-700 mb-2">complete</p>
+                                <pre class="bg-gray-900 text-gray-100 rounded-lg p-3 overflow-x-auto text-xs leading-6"><code>JOB_ID="..."
+FILE_ID="..."
+ETAG="..."
+TS=$(date +%s)
+MSG="${DOMAIN}${JOB_ID}${TS}"
+SIG=$(printf '%s' "$MSG" | openssl dgst -sha256 -hmac "$SECRET" | awk '{print $2}')
+
+curl -sS -X POST "https://cdn-manager.example.com/api/upload/complete" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"domain\": \"$DOMAIN\",
+    \"job_id\": \"$JOB_ID\",
+    \"file_id\": \"$FILE_ID\",
+    \"timestamp\": $TS,
+    \"signature\": \"$SIG\",
+    \"etag\": \"$ETAG\"
+  }"</code></pre>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <h4 class="font-medium text-gray-800 mb-2">限制与约定</h4>
+                        <table class="min-w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
+                            <thead class="bg-gray-50 text-left">
+                                <tr>
+                                    <th class="px-3 py-2 font-medium text-gray-700">项目</th>
+                                    <th class="px-3 py-2 font-medium text-gray-700">值</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-200 bg-white">
+                                <tr>
+                                    <td class="px-3 py-2">单批 init 文件数</td>
+                                    <td class="px-3 py-2">1000</td>
+                                </tr>
+                                <tr>
+                                    <td class="px-3 py-2">单次 presign 文件数</td>
+                                    <td class="px-3 py-2">50</td>
+                                </tr>
+                                <tr>
+                                    <td class="px-3 py-2">单文件 PUT 上限</td>
+                                    <td class="px-3 py-2">100 MB</td>
+                                </tr>
+                                <tr>
+                                    <td class="px-3 py-2">预签名 URL 有效期</td>
+                                    <td class="px-3 py-2">3600 秒</td>
+                                </tr>
+                                <tr>
+                                    <td class="px-3 py-2">时间戳有效窗口</td>
+                                    <td class="px-3 py-2">±300 秒</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <ul class="list-disc pl-5 text-sm text-gray-600 space-y-1 mt-3">
+                            <li>大文件（> 100MB）暂不支持外部 API 分片上传，需在后台文件存储页上传或拆分为小文件。</li>
+                            <li>外部 API 不提供 Job 进度查询，需自行跟踪 job_id 与 file_id。</li>
+                            <li>若域名没有绑定项目/环境或存储目标，complete 可能成功但 refresh 失败，public_url 也可能为空。</li>
                         </ul>
                     </div>
                 </div>
