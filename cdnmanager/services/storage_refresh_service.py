@@ -13,6 +13,13 @@ def build_cdn_file_url(domain_name, storage_key):
     return f'https://{domain_name}/{key}'
 
 
+def build_cdn_file_urls(domain_name, storage_key):
+    base_url = build_cdn_file_url(domain_name, storage_key)
+    if not base_url:
+        return []
+    return [base_url, base_url.replace('https://', 'http://', 1)]
+
+
 def find_domains_for_storage_target(target):
     environment_id = target.get('environment_id')
     project_id = target.get('project_id')
@@ -42,7 +49,7 @@ def refresh_file_for_target(target, storage_key):
     results = []
     refreshed = failed = 0
     for domain_record in domains:
-        url = build_cdn_file_url(domain_record['domain'], storage_key)
+        urls = build_cdn_file_urls(domain_record['domain'], storage_key)
         credential = get_credential(domain_record.get('provider'), domain_record.get('credential_id'))
         if not credential:
             failed += 1
@@ -52,18 +59,20 @@ def refresh_file_for_target(target, storage_key):
                 'error': 'CDN 凭据不存在',
             })
             continue
-        result = refresh_and_record(domain_record, credential, url=url, record_url=True)
-        entry = {
-            'domain': domain_record['domain'],
-            'url': url,
-            'success': bool(result.get('success')),
-            'result': result,
-        }
-        results.append(entry)
-        if result.get('success'):
-            refreshed += 1
-        else:
-            failed += 1
+
+        for url in urls:
+            result = refresh_and_record(domain_record, credential, url=url, record_url=True)
+            entry = {
+                'domain': domain_record['domain'],
+                'url': url,
+                'success': bool(result.get('success')),
+                'result': result,
+            }
+            results.append(entry)
+            if result.get('success'):
+                refreshed += 1
+            else:
+                failed += 1
 
     return {
         'success': refreshed > 0,

@@ -195,6 +195,19 @@
         return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
     }
 
+    function formatDateTime(value) {
+        if (!value) return '—';
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return String(value);
+        return date.toLocaleString('zh-CN', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+        });
+    }
+
     function formatFetchError(err, phase) {
         const message = err && err.message ? err.message : String(err);
         if (message === 'Failed to fetch') {
@@ -285,6 +298,7 @@
             tr.innerHTML = `
                 <td class="px-3 py-2"><input type="checkbox" class="remote-check rounded" data-type="folder" data-prefix="${folder.prefix}"></td>
                 <td class="px-3 py-2"><button type="button" class="remote-folder text-indigo-700 hover:underline text-left" data-prefix="${folder.prefix}"><i class="fas fa-folder text-amber-500 mr-2"></i>${folder.name}</button></td>
+                <td class="px-3 py-2 text-right text-gray-400">—</td>
                 <td class="px-3 py-2 text-right text-gray-400">—</td>`;
             els.remoteList.appendChild(tr);
         });
@@ -295,7 +309,8 @@
             tr.innerHTML = `
                 <td class="px-3 py-2"><input type="checkbox" class="remote-check rounded" data-type="file" data-key="${file.key}"></td>
                 <td class="px-3 py-2 truncate max-w-[240px]" title="${file.key}"><i class="fas fa-file text-gray-400 mr-2"></i>${file.name}</td>
-                <td class="px-3 py-2 text-right text-gray-500">${formatBytes(file.size)}</td>`;
+                <td class="px-3 py-2 text-right text-gray-500">${formatBytes(file.size)}</td>
+                <td class="px-3 py-2 text-right text-gray-500 whitespace-nowrap">${formatDateTime(file.last_modified)}</td>`;
             els.remoteList.appendChild(tr);
         });
 
@@ -817,7 +832,11 @@
     }
 
     els.remoteBrowse?.addEventListener('click', () => loadRemoteList());
-    els.target?.addEventListener('change', () => loadRemoteList());
+    els.target?.addEventListener('change', () => {
+        state.remotePrefix = '';
+        els.remotePath.value = '';
+        loadRemoteList();
+    });
     els.remoteUp?.addEventListener('click', () => {
         const parts = els.remotePath.value.replace(/\/+$/, '').split('/').filter(Boolean);
         parts.pop();
