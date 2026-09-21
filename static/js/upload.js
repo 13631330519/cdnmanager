@@ -51,17 +51,25 @@
             });
         }
 
-        storageTargetProject?.addEventListener('change', () => {
-            fillStorageTargetEnvironmentOptions(storageTargetProject.value, '');
-        });
-        storageTargetProvider?.addEventListener('change', () => updateStorageTargetCredentialOptions(''));
-        updateStorageTargetCredentialOptions('');
+        const storageTargetModal = document.getElementById('storageTargetModal');
+        const modalTitle = document.getElementById('storageTargetModalTitle');
+        const openStorageTargetModalBtn = document.getElementById('openStorageTargetModalBtn');
 
-        document.querySelectorAll('.edit-storage-target-btn').forEach((btn) => {
-            btn.addEventListener('click', () => {
-                const row = btn.closest('.storage-target-row');
-                if (!row || !storageTargetForm) return;
-                document.getElementById('storageTargetId').value = row.dataset.targetId || '';
+        function resetStorageTargetForm(mode = 'create') {
+            if (!storageTargetForm) return;
+            storageTargetForm.reset();
+            storageTargetForm.target_id.value = '';
+            if (storageTargetProject) storageTargetProject.value = '';
+            fillStorageTargetEnvironmentOptions('', '');
+            updateStorageTargetCredentialOptions('');
+            modalTitle.textContent = mode === 'edit' ? '编辑存储目标' : '新建存储目标';
+        }
+
+        function openStorageTargetModal(mode = 'create', row = null) {
+            if (!storageTargetModal || !storageTargetForm) return;
+            resetStorageTargetForm(mode);
+            if (row) {
+                storageTargetForm.target_id.value = row.dataset.targetId || '';
                 storageTargetForm.name.value = row.dataset.name || '';
                 storageTargetProvider.value = row.dataset.provider || '';
                 updateStorageTargetCredentialOptions(row.dataset.credentialId || '');
@@ -74,7 +82,30 @@
                 storageTargetForm.endpoint.value = row.dataset.endpoint || '';
                 const allowDelete = storageTargetForm.querySelector('input[name="allow_user_delete"]');
                 if (allowDelete) allowDelete.checked = row.dataset.allowUserDelete === '1';
-                storageTargetForm.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+            storageTargetModal.classList.remove('hidden');
+        }
+
+        function closeStorageTargetModal() {
+            storageTargetModal?.classList.add('hidden');
+        }
+
+        openStorageTargetModalBtn?.addEventListener('click', () => openStorageTargetModal('create'));
+        document.querySelectorAll('[data-close-storage-target-modal]').forEach((el) => {
+            el.addEventListener('click', closeStorageTargetModal);
+        });
+
+        storageTargetProject?.addEventListener('change', () => {
+            fillStorageTargetEnvironmentOptions(storageTargetProject.value, '');
+        });
+        storageTargetProvider?.addEventListener('change', () => updateStorageTargetCredentialOptions(''));
+        updateStorageTargetCredentialOptions('');
+
+        document.querySelectorAll('.edit-storage-target-btn').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const row = btn.closest('.storage-target-row');
+                if (!row || !storageTargetForm) return;
+                openStorageTargetModal('edit', row);
             });
         });
 

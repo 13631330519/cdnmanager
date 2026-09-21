@@ -67,6 +67,8 @@ def save_storage_target_route():
         return jsonify({'error': '不支持的存储类型'}), 400
     if not name or not credential_id or not bucket or not region:
         return jsonify({'error': '名称、凭据、bucket、region 必填'}), 400
+    if not project_id or not environment_id:
+        return jsonify({'error': '存储目标必须绑定项目和环境'}), 400
 
     credential = get_storage_credential(provider, credential_id)
     if not credential:

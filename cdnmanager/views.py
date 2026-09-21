@@ -1,7 +1,7 @@
 import json
 from datetime import datetime
 
-from flask import flash, redirect, render_template, request, session, url_for
+from flask import current_app, flash, redirect, render_template, request, session, url_for
 from werkzeug.security import check_password_hash
 
 from cdnmanager.common import (
@@ -85,6 +85,7 @@ def register_views(app):
         refresh_domain_options = sorted({d['domain'] for d in domains})
         all_projects_tree = load_projects_tree()
         projects_tree = filter_projects_tree(all_projects_tree, user['username'], user['role'])
+        default_api_key = current_app.config.get('EXTERNAL_API_SECRET', 'cdn_manager_external_secret')
         projects_json = json.dumps(projects_tree, ensure_ascii=False)
         all_projects_list = load_projects() if user['role'] == 'admin' else []
         project_name_map = {project['id']: project['name'] for project in all_projects_list}
@@ -136,6 +137,7 @@ def register_views(app):
             storage_credentials_json=storage_credentials_json,
             projects_tree=projects_tree,
             projects_json=projects_json,
+            default_api_key=default_api_key,
             all_projects=all_projects_list,
             project_name_map=project_name_map,
             all_projects_tree=all_projects_tree if user['role'] == 'admin' else [],

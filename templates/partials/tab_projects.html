@@ -1,44 +1,98 @@
 <div id="tab-projects" class="tab-panel hidden">
 
     <div class="bg-white rounded-xl shadow-md p-5 mb-5">
-
-        <h2 class="text-lg font-semibold mb-3 text-gray-800">新建项目</h2>
-
-        <form id="createProjectForm" class="grid gap-3 md:grid-cols-3" action="#" method="post">
-
-            <input type="text" name="name" placeholder="项目名称" class="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500" required>
-
-            <input type="text" name="description" placeholder="描述（可选）" class="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500">
-
-            <input type="text" name="allowed_users" placeholder="授权用户，逗号分隔；留空=所有人可见" class="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 md:col-span-2">
-
-            <button type="submit" class="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg transition font-medium md:col-span-3 xl:col-span-1">创建项目</button>
-
-        </form>
-
-        <div id="createProjectResult" class="mt-3 text-sm hidden"></div>
-
+        <div class="flex items-center justify-between gap-3 mb-3">
+            <h2 class="text-lg font-semibold text-gray-800">项目与环境</h2>
+            <button type="button" id="openProjectCreateModalBtn" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm">新建项目</button>
+        </div>
+        <p class="text-xs text-gray-500">管理 API Key 与用户授权；存储目标请在「存储目标」页绑定项目/环境。项目/环境的权限统一由项目可见用户控制。</p>
     </div>
-
-
 
     <div class="bg-white rounded-xl shadow-md p-5">
-
-        <div class="flex items-center justify-between mb-4">
-
-            <h2 class="text-lg font-semibold text-gray-800">项目与环境</h2>
-
-            <p class="text-xs text-gray-500">管理 API Key 与用户授权；存储目标请在「存储目标」页绑定项目/环境</p>
-
-        </div>
-
         <div id="projectsTree" class="space-y-4">
-
             <p class="text-gray-500 text-sm">加载中...</p>
-
         </div>
-
     </div>
 
+</div>
+
+<div id="apiKeyModal" class="fixed inset-0 z-50 hidden">
+    <div class="modal-backdrop absolute inset-0 bg-gray-900/50" data-close-api-key-modal></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg relative">
+            <div class="flex items-center justify-between border-b px-5 py-4">
+                <h3 class="text-lg font-semibold text-gray-800">当前 API Key</h3>
+                <button type="button" class="text-gray-400 hover:text-gray-600" data-close-api-key-modal><i class="fas fa-times"></i></button>
+            </div>
+            <div class="p-5 space-y-4">
+                <div class="border rounded-lg bg-gray-50 p-3">
+                    <div class="text-xs text-gray-500 mb-2">生效密钥</div>
+                    <code id="apiKeyModalValue" class="block break-all whitespace-pre-wrap text-sm text-gray-800"></code>
+                </div>
+                <div class="flex items-center gap-3">
+                    <button type="button" id="copyApiKeyBtn" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm">复制</button>
+                    <button type="button" class="bg-gray-200 hover:bg-gray-300 text-gray-800 px-4 py-2 rounded-lg text-sm" data-close-api-key-modal>关闭</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="environmentEditModal" class="fixed inset-0 z-50 hidden">
+    <div class="modal-backdrop absolute inset-0 bg-gray-900/50" data-close-environment-modal></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg relative">
+            <div class="sticky top-0 bg-white border-b px-5 py-4 flex items-center justify-between">
+                <h3 id="environmentEditModalTitle" class="text-lg font-semibold text-gray-800">环境设置</h3>
+                <button type="button" class="text-gray-400 hover:text-gray-600" data-close-environment-modal><i class="fas fa-times"></i></button>
+            </div>
+            <form id="environmentEditForm" class="p-5 grid gap-4" action="#" method="post">
+                <input type="hidden" name="project_id" id="environmentModalProjectId">
+                <input type="hidden" name="environment_id" id="environmentModalEnvironmentId">
+                <div>
+                    <label class="block text-xs font-medium text-gray-500 mb-1">环境名称</label>
+                    <input type="text" name="name" id="environmentModalName" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500" required>
+                </div>
+                <div class="flex items-center gap-3 pt-2 border-t">
+                    <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg text-sm">保存</button>
+                    <button type="button" id="environmentModalRegenerateBtn" class="bg-amber-500 hover:bg-amber-600 text-white px-5 py-2 rounded-lg text-sm">重新生成 API Key</button>
+                    <button type="button" class="bg-gray-200 hover:bg-gray-300 text-gray-800 px-5 py-2 rounded-lg text-sm" data-close-environment-modal>取消</button>
+                </div>
+                <div id="environmentEditResult" class="text-sm hidden"></div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div id="projectEditModal" class="fixed inset-0 z-50 hidden">
+    <div class="modal-backdrop absolute inset-0 bg-gray-900/50" data-close-project-modal></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto relative">
+            <div class="sticky top-0 bg-white border-b px-5 py-4 flex items-center justify-between">
+                <h3 id="projectEditModalTitle" class="text-lg font-semibold text-gray-800">项目设置</h3>
+                <button type="button" class="text-gray-400 hover:text-gray-600" data-close-project-modal><i class="fas fa-times"></i></button>
+            </div>
+            <form id="createProjectForm" class="p-5 grid gap-4 md:grid-cols-2" action="#" method="post">
+                <input type="hidden" name="project_id" id="projectModalProjectId">
+                <div class="md:col-span-2">
+                    <label class="block text-xs font-medium text-gray-500 mb-1">项目名称</label>
+                    <input type="text" name="name" placeholder="项目名称" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500" required>
+                </div>
+                <div class="md:col-span-2">
+                    <label class="block text-xs font-medium text-gray-500 mb-1">描述</label>
+                    <input type="text" name="description" placeholder="描述（可选）" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500">
+                </div>
+                <div class="md:col-span-2">
+                    <label class="block text-xs font-medium text-gray-500 mb-1">授权用户</label>
+                    <input type="text" name="allowed_users" placeholder="授权用户，逗号分隔；留空=所有人可见" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500">
+                </div>
+                <div class="md:col-span-2 flex items-center gap-3 pt-2 border-t">
+                    <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg text-sm">保存</button>
+                    <button type="button" class="bg-gray-200 hover:bg-gray-300 text-gray-800 px-5 py-2 rounded-lg text-sm" data-close-project-modal>取消</button>
+                    <div id="createProjectResult" class="text-sm hidden"></div>
+                </div>
+            </form>
+        </div>
+    </div>
 </div>
 

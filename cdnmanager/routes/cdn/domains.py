@@ -30,7 +30,14 @@ from cdnmanager.services.refresh_service import (
 
 domain_bp = Blueprint('domain_bp', __name__)
 
-def user_can_access_domain(username, domain):
+def user_can_access_domain(username, role, domain):
+    if can_manage_all_domains(role):
+        return True
+    if domain.get('project_id'):
+        project = get_project(domain['project_id'])
+        if project:
+            return user_can_access_project(username, role, project)
+        return False
     allowed_users = domain.get('allowed_users')
     if allowed_users is None:
         return True
@@ -44,12 +51,8 @@ def user_can_access_domain(username, domain):
 def get_visible_domains(username, role):
     visible = []
     for domain in load_domains():
-        if not can_manage_all_domains(role) and not user_can_access_domain(username, domain):
+        if not can_manage_all_domains(role) and not user_can_access_domain(username, role, domain):
             continue
-        if domain.get('project_id'):
-            project = get_project(domain['project_id'])
-            if project and not user_can_access_project(username, role, project):
-                continue
         visible.append(domain)
     return visible
 
@@ -173,11 +176,12 @@ def add_domain():
     domain_name = request.form.get('domain_name', '').strip()
     provider = request.form.get('provider')
     credential_id = request.form.get('credential_id')
-    allowed_users = parse_allowed_users(request.form.get('allowed_users', '').strip())
     project_id, environment_id, projects, environments = parse_project_binding(request.form)
     cpcode = request.form.get('cpcode', '').strip() or None
     if not domain or not domain_name or not provider or not credential_id:
         return jsonify({"error": "域名、域名名称、提供商和凭据ID必填"}), 400
+    if not project_id or not environment_id:
+        return jsonify({"error": "新加域名必须绑定项目和环境"}), 400
     if provider == 'akamai' and not cpcode:
         return jsonify({"error": "Akamai 域名必须填写 CP Code"}), 400
     if provider not in VALID_PROVIDERS:
@@ -200,7 +204,7 @@ def add_domain():
         "environment_id": environment_id,
         "projects": projects,
         "environments": environments,
-        "allowed_users": allowed_users,
+        "allowed_users": ['*'],
         "added_by": user['username'],
         "added_at": datetime.now().isoformat(),
         "refresh_status": REFRESH_STATUS_NONE,
@@ -226,10 +230,8 @@ def edit_domain():
 
     if user.get('role') == 'domain_admin':
         domain_name = existing.get('domain_name', '').strip()
-        allowed_users = existing.get('allowed_users') or ['*']
     else:
         domain_name = request.form.get('domain_name', '').strip()
-        allowed_users = parse_allowed_users(request.form.get('allowed_users', '').strip())
 
     project_id, environment_id, projects, environments = parse_project_binding(request.form)
     provider = request.form.get('provider')
@@ -237,6 +239,8 @@ def edit_domain():
     cpcode = request.form.get('cpcode', '').strip() or None
     if not domain or not domain_name or not provider or not credential_id:
         return jsonify({"error": "域名、域名名称、提供商和凭据ID必填"}), 400
+    if not project_id or not environment_id:
+        return jsonify({"error": "域名必须绑定项目和环境"}), 400
     if provider == 'akamai' and not cpcode:
         return jsonify({"error": "Akamai 域名必须填写 CP Code"}), 400
     if provider not in VALID_PROVIDERS:
@@ -256,7 +260,7 @@ def edit_domain():
         'environment_id': environment_id,
         'projects': projects,
         'environments': environments,
-        'allowed_users': allowed_users,
+        'allowed_users': ['*'],
         'added_by': existing.get('added_by'),
         'added_at': existing.get('added_at'),
         'task_id': None,
@@ -294,7 +298,7 @@ def refresh_domain():
     user = next((u for u in load_users() if u['username'] == session['username']), None)
     if not user:
         return jsonify({"error": "未登录"}), 401
-    if not can_manage_all_domains(user.get('role')) and not user_can_access_domain(user['username'], target):
+    if not can_manage_all_domains(user.get('role')) and not user_can_access_domain(user['username'], user.get('role'), target):
         return jsonify({"error": "无权限刷新该域名"}), 403
     provider = target.get('provider')
     if provider not in VALID_PROVIDERS:

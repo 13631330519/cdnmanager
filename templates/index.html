@@ -23,6 +23,7 @@
     <script id="dns-credentials" type="application/json">{{ dns_credentials_json | safe }}</script>
     <script id="storage-credentials" type="application/json">{{ storage_credentials_json | safe }}</script>
     <script id="projects-data" type="application/json">{{ projects_json | safe }}</script>
+    <script id="default-api-key" type="application/json">{{ default_api_key | tojson | safe }}</script>
     {% if user.role == 'admin' %}
     <script id="all-projects-tree" type="application/json">{{ all_projects_tree_json | safe }}</script>
     {% endif %}

@@ -18,11 +18,11 @@
         <form id="addDomainForm" class="grid gap-3 md:grid-cols-2 xl:grid-cols-3" action="#" method="post">
             <input type="text" name="domain" placeholder="域名（如 example.com）" class="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500" required>
             <input type="text" name="domain_name" placeholder="域名名称" class="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500" required>
-            <select name="project_id" id="addDomainProject" class="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500">
-                <option value="">选择项目（可选）</option>
+            <select name="project_id" id="addDomainProject" class="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500" required>
+                <option value="">选择项目</option>
             </select>
-            <select name="environment_id" id="addDomainEnvironment" class="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500">
-                <option value="">选择环境（可选）</option>
+            <select name="environment_id" id="addDomainEnvironment" class="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500" required>
+                <option value="">选择环境</option>
             </select>
             <select id="addProviderSelect" name="provider" class="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500" required>
                 <option value="">选择 CDN 提供商</option>
@@ -34,7 +34,7 @@
                 <option value="">请选择凭据</option>
             </select>
             <input type="text" id="addCpcodeInput" name="cpcode" placeholder="CP Code（Akamai 必填）" class="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 hidden">
-            <input type="text" name="allowed_users" placeholder="允许用户名，逗号分隔；留空=所有用户" class="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 md:col-span-2">
+            <div class="md:col-span-2 text-xs text-gray-500">说明：域名可见权限统一按绑定项目控制，添加时必须选择项目与环境。</div>
             <button type="submit" class="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg transition font-medium md:col-span-3 xl:col-span-1">添加域名</button>
         </form>
         <div id="addDomainResult" class="mt-3 text-sm text-green-600 hidden"></div>
@@ -204,12 +204,7 @@
                     <label class="block text-xs font-medium text-gray-500 mb-1">CP Code</label>
                     <input name="cpcode" id="domainEditCpcode" type="text" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500">
                 </div>
-                {% if user.role == 'admin' %}
-                <div class="md:col-span-2">
-                    <label class="block text-xs font-medium text-gray-500 mb-1">允许用户</label>
-                    <input name="allowed_users" id="domainEditAllowedUsers" type="text" placeholder="留空表示所有用户" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500">
-                </div>
-                {% endif %}
+                <div class="md:col-span-2 text-xs text-gray-500">说明：可见范围统一由绑定项目控制，不再单独维护域名可见用户。</div>
                 <div class="md:col-span-2 flex items-center gap-3 pt-2 border-t">
                     <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg text-sm">保存</button>
                     <button type="button" class="bg-gray-200 hover:bg-gray-300 text-gray-800 px-5 py-2 rounded-lg text-sm" data-close-domain-modal>取消</button>

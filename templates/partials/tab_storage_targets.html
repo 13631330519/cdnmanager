@@ -1,42 +1,9 @@
 <div id="tab-storage-targets" class="tab-panel hidden">
     <div class="bg-white rounded-lg shadow-md p-6 mb-8">
-        <h2 class="text-xl font-semibold mb-4 text-gray-800">添加存储目标</h2>
-        <form id="storageTargetForm" class="grid gap-4 md:grid-cols-3" action="#" method="post" onsubmit="return false;">
-            <input type="hidden" name="target_id" id="storageTargetId" value="">
-            <input type="text" name="name" placeholder="目标名称" class="px-3 py-2 border rounded focus:ring-2 focus:ring-indigo-500" required>
-            <select name="provider" id="storageTargetProvider" class="px-3 py-2 border rounded focus:ring-2 focus:ring-indigo-500" required>
-                <option value="">存储类型</option>
-                <option value="oss">阿里云 OSS</option>
-                <option value="cos">腾讯云 COS</option>
-                <option value="oos">天翼云 OOS</option>
-                <option value="ftp">FTP</option>
-                <option value="sftp">SFTP</option>
-                <option value="ftps">FTPS</option>
-            </select>
-            <select name="credential_id" id="storageTargetCredential" class="px-3 py-2 border rounded focus:ring-2 focus:ring-indigo-500" required>
-                <option value="">选择凭据</option>
-            </select>
-            <select name="project_id" id="storageTargetProject" class="px-3 py-2 border rounded focus:ring-2 focus:ring-indigo-500">
-                <option value="">绑定项目</option>
-                {% for project in all_projects %}
-                <option value="{{ project.id }}">{{ project.name }}</option>
-                {% endfor %}
-            </select>
-            <select name="environment_id" id="storageTargetEnvironment" class="px-3 py-2 border rounded focus:ring-2 focus:ring-indigo-500">
-                <option value="">绑定环境</option>
-            </select>
-            <input type="text" name="bucket" placeholder="Bucket 名称" class="px-3 py-2 border rounded focus:ring-2 focus:ring-indigo-500" required>
-            <input type="text" name="region" placeholder="Region（如 oss-cn-hangzhou / ap-guangzhou）" class="px-3 py-2 border rounded focus:ring-2 focus:ring-indigo-500" required>
-            <input type="text" name="endpoint" placeholder="自定义 Endpoint（可选）" class="px-3 py-2 border rounded focus:ring-2 focus:ring-indigo-500 md:col-span-2">
-            <label class="flex items-center gap-2 text-sm text-gray-600 md:col-span-3">
-                <input type="checkbox" name="allow_user_delete" value="1" class="rounded border-gray-300 text-indigo-600">
-                <span>允许普通用户删除此目标下的文件/文件夹（管理员与域名管理员始终可删）</span>
-            </label>
-            <p class="text-xs text-gray-500 md:col-span-3">上传完成后将按绑定的项目/环境查找 CDN 域名并刷新，请在域名管理中绑定相同项目与环境。</p>
-            <div class="md:col-span-3">
-                <button type="submit" class="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded transition">保存存储目标</button>
-            </div>
-        </form>
+        <div class="flex items-center justify-between gap-3 mb-4">
+            <h2 class="text-xl font-semibold text-gray-800">添加存储目标</h2>
+            <button type="button" id="openStorageTargetModalBtn" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded text-sm">新建存储目标</button>
+        </div>
         <div id="storageTargetResult" class="mt-3 text-sm hidden"></div>
     </div>
 
@@ -110,5 +77,54 @@
         {% else %}
         <p class="text-gray-500">暂无存储目标。</p>
         {% endif %}
+    </div>
+</div>
+
+<div id="storageTargetModal" class="fixed inset-0 z-50 hidden">
+    <div class="modal-backdrop absolute inset-0 bg-gray-900/50" data-close-storage-target-modal></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto relative">
+            <div class="sticky top-0 bg-white border-b px-5 py-4 flex items-center justify-between">
+                <h3 id="storageTargetModalTitle" class="text-lg font-semibold text-gray-800">新建存储目标</h3>
+                <button type="button" class="text-gray-400 hover:text-gray-600" data-close-storage-target-modal><i class="fas fa-times"></i></button>
+            </div>
+            <form id="storageTargetForm" class="grid gap-4 md:grid-cols-3 p-5" action="#" method="post" onsubmit="return false;">
+                <input type="hidden" name="target_id" id="storageTargetId" value="">
+                <input type="text" name="name" placeholder="目标名称" class="px-3 py-2 border rounded focus:ring-2 focus:ring-indigo-500" required>
+                <select name="provider" id="storageTargetProvider" class="px-3 py-2 border rounded focus:ring-2 focus:ring-indigo-500" required>
+                    <option value="">存储类型</option>
+                    <option value="oss">阿里云 OSS</option>
+                    <option value="cos">腾讯云 COS</option>
+                    <option value="oos">天翼云 OOS</option>
+                    <option value="ftp">FTP</option>
+                    <option value="sftp">SFTP</option>
+                    <option value="ftps">FTPS</option>
+                </select>
+                <select name="credential_id" id="storageTargetCredential" class="px-3 py-2 border rounded focus:ring-2 focus:ring-indigo-500" required>
+                    <option value="">选择凭据</option>
+                </select>
+                <select name="project_id" id="storageTargetProject" class="px-3 py-2 border rounded focus:ring-2 focus:ring-indigo-500">
+                    <option value="">绑定项目</option>
+                    {% for project in all_projects %}
+                    <option value="{{ project.id }}">{{ project.name }}</option>
+                    {% endfor %}
+                </select>
+                <select name="environment_id" id="storageTargetEnvironment" class="px-3 py-2 border rounded focus:ring-2 focus:ring-indigo-500">
+                    <option value="">绑定环境</option>
+                </select>
+                <input type="text" name="bucket" placeholder="Bucket 名称" class="px-3 py-2 border rounded focus:ring-2 focus:ring-indigo-500" required>
+                <input type="text" name="region" placeholder="Region（如 oss-cn-hangzhou / ap-guangzhou）" class="px-3 py-2 border rounded focus:ring-2 focus:ring-indigo-500" required>
+                <input type="text" name="endpoint" placeholder="自定义 Endpoint（可选）" class="px-3 py-2 border rounded focus:ring-2 focus:ring-indigo-500 md:col-span-2">
+                <label class="flex items-center gap-2 text-sm text-gray-600 md:col-span-3">
+                    <input type="checkbox" name="allow_user_delete" value="1" class="rounded border-gray-300 text-indigo-600">
+                    <span>允许普通用户删除此目标下的文件/文件夹（管理员与域名管理员始终可删）</span>
+                </label>
+                <p class="text-xs text-gray-500 md:col-span-3">上传完成后将按绑定的项目/环境查找 CDN 域名并刷新，请在域名管理中绑定相同项目与环境。新建时必须同时绑定项目和环境。</p>
+                <div class="md:col-span-3 flex items-center gap-3 pt-2 border-t">
+                    <button type="submit" class="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded transition">保存存储目标</button>
+                    <button type="button" class="bg-gray-200 hover:bg-gray-300 text-gray-800 px-5 py-2 rounded" data-close-storage-target-modal>取消</button>
+                </div>
+            </form>
+        </div>
     </div>
 </div>
