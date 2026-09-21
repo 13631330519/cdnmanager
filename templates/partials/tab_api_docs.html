@@ -1,0 +1,167 @@
+<div id="tab-api-docs" class="tab-panel hidden">
+    <div class="bg-white rounded-xl shadow-md p-5 md:p-6 space-y-6">
+        <div class="flex flex-col md:flex-row md:items-end justify-between gap-4">
+            <div>
+                <h2 class="text-xl font-semibold text-gray-800">API 接入说明</h2>
+                <p class="text-sm text-gray-500 mt-1">URL 刷新与文件上传外部接口接入文档，登录后可直接参考。</p>
+            </div>
+        </div>
+
+        <div class="space-y-8">
+            <section class="border border-gray-200 rounded-xl p-4 md:p-5 bg-indigo-50/40">
+                <h3 class="text-lg font-semibold text-gray-800 mb-3">公共说明：API Key 获取</h3>
+                <div class="space-y-3 text-sm text-gray-700">
+                    <p>本文中的两类接口均使用同一套签名鉴权方式，优先使用“域名绑定的项目/环境 API Key”。</p>
+                    <ol class="list-decimal pl-5 space-y-1">
+                        <li>进入「项目管理」页面，创建项目与环境。</li>
+                        <li>在对应项目或环境中生成 <strong>API Key</strong>（推荐优先使用环境级 Key）。<mark style="color: red;"><strong>(找管理员获取)</strong></mark></li>
+                        <li>在「域名管理」中绑定域名到同一项目/环境，确保请求中的 <code class="bg-gray-100 px-1.5 py-0.5 rounded">domain</code> 能解析到正确的密钥。</li>
+                        <li>如果项目或环境已配置独立 API Key，不能再使用公共默认 Key，否则服务端会返回 403。</li>
+                    </ol>
+                    <p class="text-gray-600">适用范围：URL 刷新接口与文件上传外部 API 均共用这一获取方式。</p>
+                </div>
+            </section>
+
+            <section class="border border-gray-200 rounded-xl p-4 md:p-5">
+                <h3 class="text-lg font-semibold text-gray-800 mb-3">1. URL 刷新接口：POST /api/refresh_url</h3>
+                <div class="rounded-lg bg-gray-50 border border-gray-200 p-3 text-sm text-gray-700">
+                    <p><span class="font-medium">接口：</span> <code class="bg-gray-100 px-1.5 py-0.5 rounded">POST /api/refresh_url</code></p>
+                    <p><span class="font-medium">Content-Type：</span> <code class="bg-gray-100 px-1.5 py-0.5 rounded">application/json</code></p>
+                </div>
+
+                <div class="mt-4 overflow-x-auto">
+                    <table class="min-w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
+                        <thead class="bg-gray-50 text-left">
+                            <tr>
+                                <th class="px-3 py-2 font-medium text-gray-700">字段</th>
+                                <th class="px-3 py-2 font-medium text-gray-700">必填</th>
+                                <th class="px-3 py-2 font-medium text-gray-700">说明</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-200 bg-white">
+                            <tr>
+                                <td class="px-3 py-2">url</td>
+                                <td class="px-3 py-2 text-center">是</td>
+                                <td class="px-3 py-2">要刷新的 CDN 资源 URL</td>
+                            </tr>
+                            <tr>
+                                <td class="px-3 py-2">timestamp</td>
+                                <td class="px-3 py-2 text-center">是</td>
+                                <td class="px-3 py-2">Unix 秒级时间戳</td>
+                            </tr>
+                            <tr>
+                                <td class="px-3 py-2">signature</td>
+                                <td class="px-3 py-2 text-center">是</td>
+                                <td class="px-3 py-2">HMAC-SHA256 签名</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="mt-4">
+                    <h4 class="font-medium text-gray-800 mb-2">签名规则</h4>
+                    <pre class="bg-gray-900 text-gray-100 rounded-lg p-3 overflow-x-auto text-xs leading-6"><code>message = url + timestamp
+signature = hmac.sha256(EXTERNAL_API_SECRET, message).hexdigest()</code></pre>
+                </div>
+
+                <div class="mt-4">
+                    <h4 class="font-medium text-gray-800 mb-2">示例请求</h4>
+                    <pre class="bg-gray-900 text-gray-100 rounded-lg p-3 overflow-x-auto text-xs leading-6"><code>curl -X POST https://cdn-manager.example.com/api/refresh_url \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "url": "https://cdn.example.com/assets/logo.png",
+    "timestamp": 1720000000,
+    "signature": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  }'</code></pre>
+                </div>
+
+                <div class="mt-4 text-sm text-gray-600">
+                    <p>说明：</p>
+                    <ul class="list-disc pl-5 mt-2 space-y-1">
+                        <li>请求中的 <code class="bg-gray-100 px-1.5 py-0.5 rounded">domain</code> 必须绑定到已存在的项目/环境；签名使用解析后的项目/环境 API Key。</li>
+                        <li>API Key 的获取方式见上方「公共说明：API Key 获取」。</li>
+                        <li>服务器会记录本次 URL 刷新任务并返回刷新结果。</li>
+                    </ul>
+                </div>
+            </section>
+
+            <section class="border border-gray-200 rounded-xl p-4 md:p-5">
+                <h3 class="text-lg font-semibold text-gray-800 mb-3">2. 文件上传外部 API 接入说明</h3>
+                <p class="text-sm text-gray-600">客户端直接向对象存储上传，服务端只负责签发 PUT URL、校验和可选 CDN 刷新；上传与刷新使用相同的 HMAC 签名鉴权模式。</p>
+
+                <div class="mt-4 space-y-4">
+                    <div>
+                        <h4 class="font-medium text-gray-800 mb-2">核心接口</h4>
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
+                                <thead class="bg-gray-50 text-left">
+                                    <tr>
+                                        <th class="px-3 py-2 font-medium text-gray-700">方法</th>
+                                        <th class="px-3 py-2 font-medium text-gray-700">路径</th>
+                                        <th class="px-3 py-2 font-medium text-gray-700">用途</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-gray-200 bg-white">
+                                    <tr>
+                                        <td class="px-3 py-2">POST</td>
+                                        <td class="px-3 py-2">/api/upload/init</td>
+                                        <td class="px-3 py-2">创建上传 Job，批量签发小文件 PUT URL</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="px-3 py-2">POST</td>
+                                        <td class="px-3 py-2">/api/upload/presign</td>
+                                        <td class="px-3 py-2">补签未签发成功的小文件 URL</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="px-3 py-2">POST</td>
+                                        <td class="px-3 py-2">/api/upload/complete</td>
+                                        <td class="px-3 py-2">确认上传完成并触发可选 CDN 刷新</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div>
+                        <h4 class="font-medium text-gray-800 mb-2">签名说明</h4>
+                        <pre class="bg-gray-900 text-gray-100 rounded-lg p-3 overflow-x-auto text-xs leading-6"><code>signature = HMAC-SHA256(secret, message).hexdigest()
+
+# init
+message = {domain}{timestamp}
+
+# presign / complete
+message = {domain}{job_id}{timestamp}</code></pre>
+                    </div>
+
+                    <div>
+                        <h4 class="font-medium text-gray-800 mb-2">接入前准备</h4>
+                        <ul class="list-disc pl-5 text-sm text-gray-600 space-y-1">
+                            <li>先按上方「公共说明：API Key 获取」中的步骤获取项目/环境级 API Key。</li>
+                            <li>随后绑定域名到同一项目/环境，并确保存储目标和域名配置一致。</li>
+                        </ul>
+                    </div>
+
+                    <div>
+                        <h4 class="font-medium text-gray-800 mb-2">上传流程</h4>
+                        <ol class="list-decimal pl-5 text-sm text-gray-600 space-y-1">
+                            <li>调用 <code class="bg-gray-100 px-1.5 py-0.5 rounded">/api/upload/init</code> 创建 Job，并拿到 <code class="bg-gray-100 px-1.5 py-0.5 rounded">upload_url</code>。</li>
+                            <li>使用 PUT 请求将文件直接上传到对象存储，并读取响应头中的 ETag。</li>
+                            <li>调用 <code class="bg-gray-100 px-1.5 py-0.5 rounded">/api/upload/complete</code> 上报 <code class="bg-gray-100 px-1.5 py-0.5 rounded">etag</code> 与 <code class="bg-gray-100 px-1.5 py-0.5 rounded">job_id</code>。</li>
+                            <li>如设置 <code class="bg-gray-100 px-1.5 py-0.5 rounded">refresh_after</code>，服务器会在完成后执行 CDN 刷新。</li>
+                        </ol>
+                    </div>
+
+                    <div>
+                        <h4 class="font-medium text-gray-800 mb-2">常见限制</h4>
+                        <ul class="list-disc pl-5 text-sm text-gray-600 space-y-1">
+                            <li>单批 <code class="bg-gray-100 px-1.5 py-0.5 rounded">init</code> 最多 1000 个文件；补签单次最多 50 个。</li>
+                            <li>单文件 PUT 上限约 100 MB；大文件请走后台文件存储页或拆分。</li>
+                            <li>时间戳有效窗口通常为 ±300 秒，签名过期会被拒绝。</li>
+                            <li>外部 API 不提供 Job 进度查询，需自行跟踪 <code class="bg-gray-100 px-1.5 py-0.5 rounded">job_id</code>。</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </div>
+</div>
