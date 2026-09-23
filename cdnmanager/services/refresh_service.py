@@ -11,16 +11,8 @@ from cdnmanager.common import (
     REFRESH_STATUS_REFRESHING,
 )
 import cdnmanager.db as db
+import cdnmanager.providers.cdn as cdn_providers
 
-from cdnmanager.providers.cdn import(
-    check_akamai_refresh, refresh_akamai,
-    check_alicdn_task, refresh_alicdn,
-    check_ctyun_task, refresh_ctyun,
-    check_lingzhi_task, refresh_lingzhi,
-    check_tencent_task, refresh_tencentcdn,
-    check_volcengine_task, refresh_volcengine,
-    refresh_x7host
-)
 DOMAIN_POLL_FIELDS = ('refresh_status', 'refresh_task_status', 'refresh_task_detail', 'last_refreshed_at')
 URL_POLL_FIELDS = ('refresh_status', 'refresh_task_detail', 'completed_at')
 
@@ -49,35 +41,35 @@ def normalize_refresh_status(result):
 
 def submit_refresh(provider, domain, credential, url=None, cpcode=None):
     if provider == 'alicdn':
-        return refresh_alicdn(domain, credential, url=url)
+        return cdn_providers.refresh_alicdn(domain, credential, url=url)
     if provider == 'tencent':
-        return refresh_tencentcdn(domain, credential, url=url)
+        return cdn_providers.refresh_tencentcdn(domain, credential, url=url)
     if provider == 'lingzhi':
-        return refresh_lingzhi(domain, credential, url=url)
+        return cdn_providers.refresh_lingzhi(domain, credential, url=url)
     if provider == 'akamai':
-        return refresh_akamai(domain, credential, url=url, cpcode=cpcode)
+        return cdn_providers.refresh_akamai(domain, credential, url=url, cpcode=cpcode)
     if provider == 'ctyun':
-        return refresh_ctyun(domain, credential, url=url)
+        return cdn_providers.refresh_ctyun(domain, credential, url=url)
     if provider == 'volcengine':
-        return refresh_volcengine(domain, credential, url=url)
+        return cdn_providers.refresh_volcengine(domain, credential, url=url)
     if provider == 'x7host':
-        return refresh_x7host(domain, credential, url=url)
+        return cdn_providers.refresh_x7host(domain, credential, url=url)
     return {'success': False, 'error': f'不支持的提供商: {provider}'}
 
 
 def check_refresh_task(provider, task_id, credential, url=None, task_detail=None):
     if provider == 'alicdn':
-        return check_alicdn_task(task_id, credential)
+        return cdn_providers.check_alicdn_task(task_id, credential)
     if provider == 'tencent':
-        return check_tencent_task(task_id, credential)
+        return cdn_providers.check_tencent_task(task_id, credential)
     if provider == 'lingzhi':
-        return check_lingzhi_task(url or '', credential)
+        return cdn_providers.check_lingzhi_task(url or '', credential)
     if provider == 'akamai':
-        return check_akamai_refresh(task_detail)
+        return cdn_providers.check_akamai_refresh(task_detail)
     if provider == 'ctyun':
-        return check_ctyun_task(task_id, credential)
+        return cdn_providers.check_ctyun_task(task_id, credential)
     if provider == 'volcengine':
-        return check_volcengine_task(task_id, credential, task_detail)
+        return cdn_providers.check_volcengine_task(task_id, credential, task_detail)
     return None
 
 
