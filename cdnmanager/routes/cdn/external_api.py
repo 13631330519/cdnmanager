@@ -106,7 +106,7 @@ def api_refresh_url():
         return jsonify({"success": False, "error": "未找到对应的已绑定域名"}), 404
 
     message = f"{url}{timestamp}"
-    ok, error = verify_domain_signature(domain_record, message, timestamp, signature)
+    ok, error = api_auth_service.verify_domain_signature(domain_record, message, timestamp, signature)
     if not ok:
         return jsonify({"success": False, "error": error}), 403 if error == '验签失败' or 'Key' in (error or '') else 400
 
@@ -158,7 +158,7 @@ def api_upload_init():
         return jsonify({'success': False, 'error': '域名不存在'}), 404
 
     message = f"{domain_record['domain']}{timestamp}"
-    ok, error = verify_domain_signature(domain_record, message, timestamp, signature)
+    ok, error = api_auth_service.verify_domain_signature(domain_record, message, timestamp, signature)
     if not ok:
         return jsonify({'success': False, 'error': error}), 403 if error in {'验签失败'} or (error and 'Key' in error) else 400
 
@@ -321,7 +321,7 @@ def api_upload_complete():
     refresh_result = None
     public_url = None
     if job.get('refresh_after'):
-        refresh_result = refresh_file_for_target(target, file_record['storage_key'])
+        refresh_result = storage_refresh_service.refresh_file_for_target(target, file_record['storage_key'])
         if refresh_result and refresh_result.get('results'):
             public_url = refresh_result['results'][0].get('url')
 

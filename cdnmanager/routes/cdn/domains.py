@@ -56,9 +56,6 @@ def parse_project_binding(form):
     projects, environments = db.sync_domain_tags_from_ids(project_id, environment_id)
     return project_id, environment_id, projects, environments
 
-
-record_refresh_submission = refresh_service.record_domain_refresh
-
 DOMAIN_POLL_FIELDS = ('refresh_status', 'refresh_task_status', 'refresh_task_detail', 'last_refreshed_at')
 URL_POLL_FIELDS = ('refresh_status', 'refresh_task_detail', 'completed_at')
 
@@ -253,7 +250,7 @@ def refresh_domain():
     target = next((d for d in domains if d['domain'] == domain), None)
     if not target:
         return jsonify({"error": "域名不存在"}), 404
-    if not can_manage_all_domains(user.get('role')) and not user_can_access_domain(user['username'], user.get('role'), target):
+    if not can_manage_all_domains(user.get('role')) and not db.user_can_access_domain(user['username'], user.get('role'), target):
         return jsonify({"error": "无权限刷新该域名"}), 403
     provider = target.get('provider')
     if provider not in VALID_PROVIDERS:
@@ -272,7 +269,7 @@ def refresh_domain():
         return jsonify({"error": "该域名正在刷新中，请稍后"}), 400
 
     try:
-        result = refresh_and_record(target, credential, record_url=True)
+        result = refresh_service.refresh_and_record(target, credential, record_url=True)
         if result.get('error') and not result.get('success'):
             return jsonify({"error": result.get('error', '刷新失败')}), 400
     except Exception as exc:

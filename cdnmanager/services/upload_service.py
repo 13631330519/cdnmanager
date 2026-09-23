@@ -217,7 +217,7 @@ def batch_refresh_cdn(job, target, limit=200):
             break
         offset += len(files)
         for file_record in files:
-            result = refresh_file_for_target(target, file_record['storage_key'])
+            result = storage_refresh_service.refresh_file_for_target(target, file_record['storage_key'])
             refreshed += result.get('refreshed', 0)
             failed += result.get('failed', 0)
 

@@ -14,12 +14,12 @@ from cdnmanager.providers.cdn.volcengine import check_volcengine_task, refresh_v
 from cdnmanager.providers.cdn.x7host import refresh_x7host
 
 __all__ = [
-    'sync_cdn_cname'
-    'check_akamai_refresh','refresh_akamai',
-    'check_alicdn_task','refresh_alicdn',
-    'check_ctyun_task','refresh_ctyun',
-    'check_lingzhi_task','refresh_lingzhi',
-    'check_tencent_task','refresh_tencentcdn',
-    'check_volcengine_task','refresh_volcengine',
-    'refresh_x7host'
+    'sync_cdn_cname',
+    'check_akamai_refresh', 'refresh_akamai',
+    'check_alicdn_task', 'refresh_alicdn',
+    'check_ctyun_task', 'refresh_ctyun',
+    'check_lingzhi_task', 'refresh_lingzhi',
+    'check_tencent_task', 'refresh_tencentcdn',
+    'check_volcengine_task', 'refresh_volcengine',
+    'refresh_x7host',
 ]

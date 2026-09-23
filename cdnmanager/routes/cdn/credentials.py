@@ -4,7 +4,7 @@ from flask import Blueprint, jsonify, request
 from cdnmanager.common import VALID_PROVIDERS, CREDENTIAL_FIELD_LABELS
 import cdnmanager.db as db
 
-from cdnmanager.routes.common import require_admin,get_credential
+from cdnmanager.routes.common import require_admin
 
 credential_bp = Blueprint('credential_bp', __name__)
 
@@ -38,7 +38,7 @@ def save_credential_route():
     if error_response:
         return error_response, status
 
-    existing = get_credential(provider, credential_id)
+    existing = db.get_credential(provider, credential_id)
     message = "凭据已更新" if existing else "凭据已添加"
     db.upsert_credential(provider, {
         'id': credential_id,
