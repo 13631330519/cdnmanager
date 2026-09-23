@@ -1,4 +1,4 @@
-﻿from cdnmanager import create_app
+from cdnmanager import create_app
 
 app = create_app()
 

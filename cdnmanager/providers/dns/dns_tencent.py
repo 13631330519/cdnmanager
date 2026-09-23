@@ -11,11 +11,11 @@ from cdnmanager.common import log
 def sign_dnspod_request(action, payload, secret_id, secret_key):
     timestamp = int(datetime.now().timestamp())
     date = datetime.utcfromtimestamp(timestamp).strftime('%Y-%m-%d')
-    payload_str = json.dumps(payload, separators=(',', ':'), sort_keys=True, ensure_ascii=False)
+    payload_str = json.dumps(payload, separators=(',', ':'), sort_keys=True, ensure_ascii=False).encode('utf-8')
 
     canonical_headers = 'content-type:application/json; charset=utf-8\nhost:dnspod.tencentcloudapi.com\n'
     signed_headers = 'content-type;host'
-    hashed_request_payload = hashlib.sha256(payload_str.encode('utf-8')).hexdigest()
+    hashed_request_payload = hashlib.sha256(payload_str).hexdigest()
     canonical_request = '\n'.join([
         'POST',
         '/',
