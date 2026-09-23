@@ -1,7 +1,7 @@
 from flask import jsonify
 
-from cdnmanager.db import get_credential, get_user, load_credentials
-from cdnmanager.common import VALID_PROVIDERS
+from cdnmanager.db import get_user
+
 
 def get_session_user():
     from flask import session

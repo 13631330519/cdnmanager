@@ -1,9 +1,10 @@
 from datetime import datetime
 
-from flask import Blueprint, jsonify, request, session
+from flask import Blueprint, jsonify, request
 
 from cdnmanager.common import STORAGE_CREDENTIAL_FIELD_LABELS, STORAGE_PROVIDERS
-from cdnmanager.db import delete_storage_credential, get_storage_credential, get_user, upsert_storage_credential
+from cdnmanager.db import delete_storage_credential, get_storage_credential, upsert_storage_credential
+from cdnmanager.routes.common import require_admin
 
 storage_credential_bp = Blueprint('storage_credential_bp', __name__)
 

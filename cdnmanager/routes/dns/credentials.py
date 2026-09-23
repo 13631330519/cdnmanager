@@ -2,7 +2,7 @@ from datetime import datetime
 from flask import Blueprint, jsonify, request
 
 from cdnmanager.common import DNS_PROVIDERS, DNS_CREDENTIAL_FIELD_LABELS
-from cdnmanager.db import load_dns_credentials, upsert_dns_credential, delete_dns_credential, get_dns_credential
+from cdnmanager.db import delete_dns_credential, get_dns_credential, upsert_dns_credential
 from cdnmanager.routes.common import require_admin
 
 dns_credential_bp = Blueprint('dns_credential_bp', __name__)

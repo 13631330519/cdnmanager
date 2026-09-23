@@ -21,7 +21,7 @@ from cdnmanager.common import (
     UPLOAD_PART_SIZE,
     UPLOAD_PRESIGN_BATCH_MAX,
 )
-from cdnmanager.routes.common import get_session_user, require_login,get_credential
+from cdnmanager.routes.common import get_session_user, require_login
 from cdnmanager.db import (
     cleanup_finished_upload_job,
     count_upload_files,
@@ -31,7 +31,6 @@ from cdnmanager.db import (
     get_storage_target,
     get_upload_file,
     get_upload_job,
-    get_user,
     insert_upload_parts,
     list_failed_upload_files,
     list_upload_files,
@@ -43,7 +42,6 @@ from cdnmanager.db import (
     update_upload_part,
 )
 from cdnmanager.providers.storage.storage_service import (
-    build_object_key,
     ensure_browser_cors,
     get_adapter,
     part_size_for,

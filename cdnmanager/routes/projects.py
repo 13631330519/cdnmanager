@@ -12,14 +12,11 @@ from cdnmanager.db import (
     get_project,
     get_environment_by_name,
     get_project_by_name,
-    list_storage_targets_for_environment,
+    load_domains,
     load_projects_tree,
-    resolve_storage_target_for_domain,
     sync_domain_tags_from_ids,
     upsert_environment,
     upsert_project,
-    get_storage_target,
-    load_domains,
     update_domain_fields,
 )
 

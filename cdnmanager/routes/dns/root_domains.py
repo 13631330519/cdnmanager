@@ -3,11 +3,10 @@ from flask import Blueprint, jsonify, request, session
 
 from cdnmanager.common import DNS_PROVIDERS, log
 from cdnmanager.db import (
-    load_root_domains,
-    get_root_domain,
-    upsert_root_domain,
     delete_root_domain,
     get_dns_credential,
+    get_root_domain,
+    upsert_root_domain,
 )
 from cdnmanager.routes.common import require_admin
 from cdnmanager.providers.dns import list_dns_records, update_dns_record, create_dns_record, delete_dns_record
