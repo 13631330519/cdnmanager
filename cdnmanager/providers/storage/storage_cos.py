@@ -3,7 +3,7 @@ import math
 from qcloud_cos import CosConfig, CosS3Client
 
 from cdnmanager.common import UPLOAD_PART_SIZE, UPLOAD_PRESIGN_EXPIRES
-from cdnmanager.providers.cors_merge import merge_cos_rules
+from cdnmanager.providers.storage.cors_merge import merge_cos_rules
 
 
 def _client(credential, config):

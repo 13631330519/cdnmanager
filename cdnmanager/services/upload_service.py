@@ -15,13 +15,8 @@ from cdnmanager.common import (
     UPLOAD_PRESIGN_BATCH_MAX,
 )
 import cdnmanager.db as db
+import cdnmanager.providers.storage.storage_service as storage_service
 
-from cdnmanager.providers.storage.storage_service import (
-    build_object_key,
-    get_adapter,
-    total_parts_for,
-    uses_multipart,
-)
 from cdnmanager.services.storage_refresh_service import refresh_file_for_target
 
 
@@ -46,7 +41,7 @@ def build_file_rows(target, job_id, remote_prefix, files):
             'mime': item.get('mime') or 'application/octet-stream',
             'status': UPLOAD_FILE_PENDING,
             'bytes_uploaded': 0,
-            'storage_key': build_object_key(config, remote_prefix, relative_path),
+            'storage_key': storage_service.build_object_key(config, remote_prefix, relative_path),
             'upload_id': None,
             'etag': None,
             'error': None,
@@ -122,7 +117,7 @@ def _job_storage_ctx(job):
     if not credential:
         raise ValueError('存储凭据不存在')
     config = target.get('target_config') or {}
-    adapter = get_adapter(target['provider'])
+    adapter = storage_service.get_adapter(target['provider'])
     return target, credential, config, adapter
 
 
@@ -140,7 +135,7 @@ def presign_put_batch(file_ids, origin=None):
         if file_record['status'] not in {UPLOAD_FILE_PENDING, UPLOAD_FILE_FAILED}:
             errors.append({'file_id': file_id, 'error': f"状态不可 presign: {file_record['status']}"})
             continue
-        if uses_multipart(file_record['size']):
+        if storage_service.uses_multipart(file_record['size']):
             errors.append({'file_id': file_id, 'error': '大文件请使用 start/multipart'})
             continue
 
@@ -151,10 +146,9 @@ def presign_put_batch(file_ids, origin=None):
             errors.append({'file_id': file_id, 'error': str(exc)})
             continue
 
-        from cdnmanager.providers.storage.storage_service import ensure_browser_cors
         cors_origins = [origin] if origin else ['*']
         try:
-            ensure_browser_cors(adapter, credential, config, cors_origins)
+            storage_service.ensure_browser_cors(adapter, credential, config, cors_origins)
         except Exception:
             pass
 
@@ -183,7 +177,7 @@ def presign_put_batch(file_ids, origin=None):
 
 
 def verify_multipart_parts(adapter, credential, config, file_record, local_parts):
-    expected = total_parts_for(file_record['size'])
+    expected = storage_service.total_parts_for(file_record['size'])
     if not hasattr(adapter, 'list_uploaded_parts'):
         return local_parts[:expected], None
 

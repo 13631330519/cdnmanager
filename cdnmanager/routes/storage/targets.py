@@ -6,9 +6,9 @@ from flask import Blueprint, jsonify, request
 
 from cdnmanager.common import STORAGE_PROVIDERS
 import cdnmanager.db as db
+import cdnmanager.providers.storage.storage_service as storage_service
 
 from cdnmanager.routes.common import require_admin
-from cdnmanager.providers.storage.storage_service import ensure_browser_cors, get_adapter
 
 storage_target_bp = Blueprint('storage_target_bp', __name__)
 
@@ -81,8 +81,8 @@ def save_storage_target_route():
     message = '存储目标已更新' if existing else '存储目标已添加'
     cors_warning = None
     try:
-        adapter = get_adapter(provider)
-        ensure_browser_cors(adapter, credential, {
+        adapter = storage_service.get_adapter(provider)
+        storage_service.ensure_browser_cors(adapter, credential, {
             'bucket': bucket,
             'region': region,
             'endpoint': endpoint,

@@ -7,7 +7,7 @@ from botocore.client import Config
 from botocore.exceptions import ClientError
 
 from cdnmanager.common import UPLOAD_PART_SIZE, UPLOAD_PRESIGN_EXPIRES
-from cdnmanager.providers.cors_merge import merge_s3_rules
+from cdnmanager.providers.storage.cors_merge import merge_s3_rules
 
 
 def _endpoint(config):

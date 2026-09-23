@@ -12,8 +12,8 @@ from cdnmanager.common import (
     REFRESH_STATUS_NONE,
 )
 import cdnmanager.db as db
+import cdnmanager.providers.storage.storage_service as storage_service
 
-from cdnmanager.providers.storage.storage_service import uses_multipart
 from cdnmanager.services.storage_refresh_service import refresh_file_for_target
 from cdnmanager.services.api_auth_service import (
     verify_domain_job_signature,
@@ -181,7 +181,7 @@ def api_upload_init():
     except ValueError as exc:
         return jsonify({'success': False, 'error': str(exc)}), 400
 
-    presign_ids = [row['id'] for row in rows if not uses_multipart(row['size'])]
+    presign_ids = [row['id'] for row in rows if not storage_service.uses_multipart(row['size'])]
     presigned, presign_errors = presign_put_batch(presign_ids[:UPLOAD_PRESIGN_BATCH_MAX]) if presign_ids else ([], [])
 
     return jsonify({
@@ -194,7 +194,7 @@ def api_upload_init():
                 'id': row['id'],
                 'relative_path': row['relative_path'],
                 'size': row['size'],
-                'multipart': uses_multipart(row['size']),
+                'multipart': storage_service.uses_multipart(row['size']),
             }
             for row in rows
         ],
@@ -270,7 +270,6 @@ def api_upload_complete():
         return jsonify({'success': False, 'error': 'Job 无权限'}), 403
 
     from cdnmanager.routes.storage.uploads import _maybe_cleanup_job
-    from cdnmanager.providers.storage.storage_service import total_parts_for
     from cdnmanager.services.upload_service import _job_storage_ctx
 
     try:
@@ -281,7 +280,7 @@ def api_upload_complete():
     db.update_upload_file(file_id, {'status': UPLOAD_FILE_VERIFYING})
 
     if file_record.get('upload_id'):
-        expected_parts = total_parts_for(file_record['size'])
+        expected_parts = storage_service.total_parts_for(file_record['size'])
         local_parts = [
             {'part_number': part['part_number'], 'etag': part['etag']}
             for part in db.list_upload_parts(file_id)

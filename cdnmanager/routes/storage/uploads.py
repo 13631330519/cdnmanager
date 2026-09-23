@@ -23,14 +23,8 @@ from cdnmanager.common import (
 )
 from cdnmanager.routes.common import get_session_user, require_login
 import cdnmanager.db as db
+import cdnmanager.providers.storage.storage_service as storage_service
 
-from cdnmanager.providers.storage.storage_service import (
-    ensure_browser_cors,
-    get_adapter,
-    part_size_for,
-    total_parts_for,
-    uses_multipart,
-)
 from cdnmanager.services.storage_refresh_service import refresh_file_for_target
 from cdnmanager.services.upload_service import (
     append_manifest_batch,
@@ -85,7 +79,7 @@ def _job_context(file_record):
     if not credential:
         return None, None, None, jsonify({'error': '存储凭据不存在'}), 400
     config = target.get('target_config') or {}
-    adapter = get_adapter(target['provider'])
+    adapter = storage_service.get_adapter(target['provider'])
     return job, target, (credential, config, adapter), None, None
 
 
@@ -366,11 +360,11 @@ def start_upload_file(file_id):
     origin = request.headers.get('Origin')
     cors_origins = [origin] if origin else ['*']
     try:
-        ensure_browser_cors(adapter, credential, config, cors_origins)
+        storage_service.ensure_browser_cors(adapter, credential, config, cors_origins)
     except Exception as exc:
         logger.warning('自动配置存储 CORS 失败: %s', exc)
 
-    if uses_multipart(file_size):
+    if storage_service.uses_multipart(file_size):
         upload_id, parts, total_parts = adapter.init_multipart(
             credential, config, object_key, file_size, mime=mime,
         )
@@ -379,7 +373,7 @@ def start_upload_file(file_id):
             part_rows.append({
                 'file_id': file_id,
                 'part_number': part_number,
-                'size': part_size_for(file_size, part_number, total_parts),
+                'size': storage_service.part_size_for(file_size, part_number, total_parts),
                 'etag': None,
                 'status': 'pending',
             })
@@ -422,14 +416,14 @@ def presign_upload_parts(file_id):
         return jsonify({'error': '尚未初始化 multipart'}), 400
 
     file_size = file_record['size']
-    total_parts = total_parts_for(file_size)
+    total_parts = storage_service.total_parts_for(file_size)
     end_part = min(end_part, total_parts)
     part_rows = []
     for part_number in range(start_part, end_part + 1):
         part_rows.append({
             'file_id': file_id,
             'part_number': part_number,
-            'size': part_size_for(file_size, part_number, total_parts),
+            'size': storage_service.part_size_for(file_size, part_number, total_parts),
             'etag': None,
             'status': 'pending',
         })
@@ -482,7 +476,7 @@ def complete_upload_file(file_id):
     etag = (data.get('etag') or '').strip().strip('"')
 
     if file_record.get('upload_id'):
-        expected_parts = total_parts_for(file_record['size'])
+        expected_parts = storage_service.total_parts_for(file_record['size'])
         local_parts = [
             {'part_number': p['part_number'], 'etag': p['etag']}
             for p in db.list_upload_parts(file_id)

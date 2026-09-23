@@ -3,7 +3,7 @@ import math
 import oss2
 
 from cdnmanager.common import UPLOAD_PART_SIZE, UPLOAD_PRESIGN_EXPIRES
-from cdnmanager.providers.cors_merge import UPLOAD_METHODS, normalize_origins, rule_satisfies_upload
+from cdnmanager.providers.storage.cors_merge import UPLOAD_METHODS, normalize_origins, rule_satisfies_upload
 
 
 def _endpoint(config):

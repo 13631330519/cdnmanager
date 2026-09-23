@@ -4,8 +4,8 @@ from flask import Blueprint, jsonify, request
 
 from cdnmanager.common import can_storage_delete
 import cdnmanager.db as db
+import cdnmanager.providers.storage.storage_service as storage_service
 
-from cdnmanager.providers.storage.storage_service import build_list_prefix, get_adapter
 from cdnmanager.routes.common import get_session_user, require_login
 
 storage_browser_bp = Blueprint('storage_browser_bp', __name__)
@@ -32,7 +32,7 @@ def _target_context(target_id):
     if not credential:
         return None, None, None, jsonify({'error': '存储凭据不存在'}), 400
     config = target.get('target_config') or {}
-    adapter = get_adapter(target['provider'])
+    adapter = storage_service.get_adapter(target['provider'])
     return user, target, (credential, config, adapter), None, None
 
 
@@ -48,7 +48,7 @@ def list_storage_objects():
         return err, status
     credential, config, adapter = ctx
 
-    list_prefix = build_list_prefix(config, remote_prefix)
+    list_prefix = storage_service.build_list_prefix(config, remote_prefix)
     try:
         listing = adapter.list_objects(credential, config, prefix=list_prefix)
     except Exception as exc:
