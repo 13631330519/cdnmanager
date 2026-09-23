@@ -1,7 +1,10 @@
 import math
 
 from cdnmanager.common import UPLOAD_MULTIPART_THRESHOLD, UPLOAD_PART_SIZE
-from cdnmanager.providers import storage_cos, storage_ftp, storage_oss
+import cdnmanager.providers.storage.storage_cos as storage_cos
+import cdnmanager.providers.storage.storage_ftp as storage_ftp
+import cdnmanager.providers.storage.storage_oos as storage_oos
+import cdnmanager.providers.storage.storage_oss as storage_oss
 
 
 def build_object_key(target_config, remote_prefix, relative_path):
@@ -36,7 +39,6 @@ def get_adapter(provider):
     if provider == 'cos':
         return storage_cos
     if provider == 'oos':
-        from cdnmanager.providers import storage_oos
         return storage_oos
     if provider in {'ftp', 'sftp', 'ftps'}:
         return storage_ftp

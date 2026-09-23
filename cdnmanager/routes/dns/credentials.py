@@ -1,19 +1,11 @@
 from datetime import datetime
-from flask import Blueprint, jsonify, request, session
+from flask import Blueprint, jsonify, request
 
 from cdnmanager.common import DNS_PROVIDERS, DNS_CREDENTIAL_FIELD_LABELS
-from cdnmanager.db.models import load_dns_credentials, upsert_dns_credential, delete_dns_credential, get_dns_credential, get_user
+from cdnmanager.db import load_dns_credentials, upsert_dns_credential, delete_dns_credential, get_dns_credential
+from cdnmanager.routes.common import require_admin
 
 dns_credential_bp = Blueprint('dns_credential_bp', __name__)
-
-
-def _require_admin():
-    if 'username' not in session:
-        return jsonify({'error': '未登录'}), 401
-    user = get_user(session['username'])
-    if not user or user.get('role') != 'admin':
-        return jsonify({'error': '无权限'}), 403
-    return None
 
 
 def _validate_fields(provider, form):
@@ -29,7 +21,7 @@ def _validate_fields(provider, form):
 
 @dns_credential_bp.route('/save_dns_credential', methods=['POST'])
 def save_dns_credential_route():
-    denied = _require_admin()
+    denied = require_admin()
     if denied:
         return denied
 
@@ -60,7 +52,7 @@ def save_dns_credential_route():
 
 @dns_credential_bp.route('/delete_dns_credential', methods=['POST'])
 def delete_dns_credential_route():
-    denied = _require_admin()
+    denied = require_admin()
     if denied:
         return denied
 

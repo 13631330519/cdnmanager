@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 
 from cdnmanager.common import UPLOAD_FILE_FAILED, UPLOAD_HEARTBEAT_TIMEOUT
 from cdnmanager.config import ENABLE_UPLOAD_TIMEOUT_SCAN
-from cdnmanager.db.models import list_stale_uploading_files, recalculate_upload_job_stats, update_upload_file
+from cdnmanager.db import list_stale_uploading_files, recalculate_upload_job_stats, update_upload_file
 
 logger = logging.getLogger(__name__)
 

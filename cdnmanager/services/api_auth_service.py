@@ -6,7 +6,7 @@ from datetime import datetime
 
 from flask import current_app
 
-from cdnmanager.db.projects import get_environment, get_project
+from cdnmanager.db import get_environment, get_project
 
 
 def default_api_secret():

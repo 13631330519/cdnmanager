@@ -1,5 +1,5 @@
 from cdnmanager.common import CDN_CNAME_SUFFIXES, KNOWN_CDN_CNAME_SUFFIXES, log
-from cdnmanager.db import load_root_domains, get_dns_credential
+from cdnmanager.db import get_dns_credential, load_root_domains
 from cdnmanager.providers.dns import list_dns_records, update_dns_record
 
 

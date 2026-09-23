@@ -1,7 +1,9 @@
 from datetime import datetime
-from flask import Blueprint, jsonify, request, session
+from flask import Blueprint, jsonify, request
+
 from cdnmanager.common import VALID_PROVIDERS, CREDENTIAL_FIELD_LABELS
-from cdnmanager.db.models import load_credentials, upsert_credential, delete_credential, load_users
+from cdnmanager.db import load_credentials, upsert_credential, delete_credential
+from cdnmanager.routes.common import require_admin
 
 credential_bp = Blueprint('credential_bp', __name__)
 
@@ -26,11 +28,9 @@ def _validate_credential_fields(provider, form):
 
 @credential_bp.route('/save_credential', methods=['POST'])
 def save_credential_route():
-    if 'username' not in session:
-        return jsonify({"error": "未登录"}), 401
-    user = next((u for u in load_users() if u['username'] == session['username']), None)
-    if user['role'] != 'admin':
-        return jsonify({"error": "无权限保存凭据"}), 403
+    denied = require_admin()
+    if denied:
+        return denied
 
     provider = request.form.get('provider')
     credential_id = request.form.get('credential_id', '').strip()
@@ -61,11 +61,9 @@ def save_credential_route():
 
 @credential_bp.route('/delete_credential', methods=['POST'])
 def delete_credential_route():
-    if 'username' not in session:
-        return jsonify({"error": "未登录"}), 401
-    user = next((u for u in load_users() if u['username'] == session['username']), None)
-    if user['role'] != 'admin':
-        return jsonify({"error": "无权限删除凭据"}), 403
+    denied = require_admin()
+    if denied:
+        return denied
     provider = request.form.get('provider')
     credential_id = request.form.get('credential_id', '').strip()
     if provider not in VALID_PROVIDERS or not credential_id:

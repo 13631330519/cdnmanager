@@ -1,10 +1,10 @@
-from cdnmanager.providers.dns_aliyun import (
+from cdnmanager.providers.dns.dns_aliyun import (
     list_dns_records_aliyun,
     update_dns_record_aliyun,
     create_dns_record_aliyun,
     delete_dns_record_aliyun,
 )
-from cdnmanager.providers.dns_tencent import (
+from cdnmanager.providers.dns.dns_tencent import (
     list_dns_records_tencent,
     update_dns_record_tencent,
     create_dns_record_tencent,

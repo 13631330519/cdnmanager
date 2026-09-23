@@ -1,10 +1,9 @@
 import uuid
 from datetime import datetime
 
-from flask import Blueprint, jsonify, request, session
+from flask import Blueprint, jsonify, request
 
-from cdnmanager.db.models import get_storage_target, get_user, load_domains, update_domain_fields
-from cdnmanager.db.projects import (
+from cdnmanager.db import (
     _normalize_allowed_users,
     delete_environment,
     delete_project,
@@ -18,18 +17,21 @@ from cdnmanager.db.projects import (
     sync_domain_tags_from_ids,
     upsert_environment,
     upsert_project,
+    get_storage_target,
+    load_domains, 
+    update_domain_fields,
 )
+
+from cdnmanager.routes.common import get_session_user, require_admin
 
 project_bp = Blueprint('project_bp', __name__)
 
 
 def _require_admin():
-    if 'username' not in session:
-        return None, jsonify({'error': '未登录'}), 401
-    user = get_user(session['username'])
-    if not user or user.get('role') != 'admin':
-        return None, jsonify({'error': '无权限'}), 403
-    return user, None, None
+    denied = require_admin()
+    if denied:
+        return None, denied[0], denied[1]
+    return get_session_user(), None, None
 
 
 def resolve_storage_target_for_domain(domain_record, storage_target_id=None):

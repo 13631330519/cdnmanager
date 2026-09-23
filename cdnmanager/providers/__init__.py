@@ -1,1 +1,0 @@
-"""CDN provider integration package."""

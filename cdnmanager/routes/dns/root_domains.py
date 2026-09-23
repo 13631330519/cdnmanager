@@ -2,26 +2,17 @@ from datetime import datetime
 from flask import Blueprint, jsonify, request, session
 
 from cdnmanager.common import DNS_PROVIDERS, log
-from cdnmanager.db.models import (
+from cdnmanager.db import (
     load_root_domains,
     get_root_domain,
     upsert_root_domain,
     delete_root_domain,
     get_dns_credential,
-    get_user,
 )
-from cdnmanager.providers.dns_service import list_dns_records, update_dns_record, create_dns_record, delete_dns_record
+from cdnmanager.routes.common import require_admin
+from cdnmanager.providers.dns import list_dns_records, update_dns_record, create_dns_record, delete_dns_record
 
 root_domain_bp = Blueprint('root_domain_bp', __name__)
-
-
-def _require_admin():
-    if 'username' not in session:
-        return jsonify({'error': '未登录'}), 401
-    user = get_user(session['username'])
-    if not user or user.get('role') != 'admin':
-        return jsonify({'error': '无权限'}), 403
-    return None
 
 
 def _get_dns_context(root_domain_name):
@@ -37,7 +28,7 @@ def _get_dns_context(root_domain_name):
 
 @root_domain_bp.route('/add_root_domain', methods=['POST'])
 def add_root_domain():
-    denied = _require_admin()
+    denied = require_admin()
     if denied:
         return denied
 
@@ -70,7 +61,7 @@ def add_root_domain():
 
 @root_domain_bp.route('/edit_root_domain', methods=['POST'])
 def edit_root_domain():
-    denied = _require_admin()
+    denied = require_admin()
     if denied:
         return denied
 
@@ -103,7 +94,7 @@ def edit_root_domain():
 
 @root_domain_bp.route('/delete_root_domain', methods=['POST'])
 def delete_root_domain_route():
-    denied = _require_admin()
+    denied = require_admin()
     if denied:
         return denied
 
@@ -116,7 +107,7 @@ def delete_root_domain_route():
 
 @root_domain_bp.route('/internal/dns/records', methods=['GET'])
 def internal_list_dns_records():
-    denied = _require_admin()
+    denied = require_admin()
     if denied:
         return denied
 
@@ -144,7 +135,7 @@ def internal_list_dns_records():
 
 @root_domain_bp.route('/internal/dns/record/update', methods=['POST'])
 def internal_update_dns_record():
-    denied = _require_admin()
+    denied = require_admin()
     if denied:
         return denied
 
@@ -187,7 +178,7 @@ def internal_update_dns_record():
 
 @root_domain_bp.route('/internal/dns/record/create', methods=['POST'])
 def internal_create_dns_record():
-    denied = _require_admin()
+    denied = require_admin()
     if denied:
         return denied
 
@@ -228,7 +219,7 @@ def internal_create_dns_record():
 
 @root_domain_bp.route('/internal/dns/record/delete', methods=['POST'])
 def internal_delete_dns_record():
-    denied = _require_admin()
+    denied = require_admin()
     if denied:
         return denied
 

@@ -3,18 +3,9 @@ from datetime import datetime
 from flask import Blueprint, jsonify, request, session
 
 from cdnmanager.common import STORAGE_CREDENTIAL_FIELD_LABELS, STORAGE_PROVIDERS
-from cdnmanager.db.models import delete_storage_credential, get_storage_credential, get_user, upsert_storage_credential
+from cdnmanager.db import delete_storage_credential, get_storage_credential, get_user, upsert_storage_credential
 
 storage_credential_bp = Blueprint('storage_credential_bp', __name__)
-
-
-def _require_admin():
-    if 'username' not in session:
-        return jsonify({'error': '未登录'}), 401
-    user = get_user(session['username'])
-    if not user or user.get('role') != 'admin':
-        return jsonify({'error': '无权限'}), 403
-    return None
 
 
 def _validate_fields(provider, form):
@@ -30,7 +21,7 @@ def _validate_fields(provider, form):
 
 @storage_credential_bp.route('/save_storage_credential', methods=['POST'])
 def save_storage_credential_route():
-    denied = _require_admin()
+    denied = require_admin()
     if denied:
         return denied
 
@@ -61,7 +52,7 @@ def save_storage_credential_route():
 
 @storage_credential_bp.route('/delete_storage_credential', methods=['POST'])
 def delete_storage_credential_route():
-    denied = _require_admin()
+    denied = require_admin()
     if denied:
         return denied
     provider = request.form.get('provider')

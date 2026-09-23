@@ -1,18 +1,20 @@
 from urllib.parse import quote
 
-from flask import Blueprint, jsonify, request, session
+from flask import Blueprint, jsonify, request
 
 from cdnmanager.common import can_storage_delete
-from cdnmanager.db.models import get_storage_credential, get_storage_target, get_user
-from cdnmanager.providers.storage_service import build_list_prefix, get_adapter
+from cdnmanager.db import get_storage_credential, get_storage_target
+from cdnmanager.providers.storage.storage_service import build_list_prefix, get_adapter
+from cdnmanager.routes.common import get_session_user, require_login
 
 storage_browser_bp = Blueprint('storage_browser_bp', __name__)
 
 
 def _require_login():
-    if 'username' not in session:
-        return None, jsonify({'error': '未登录'}), 401
-    user = get_user(session['username'])
+    login_error = require_login()
+    if login_error is not None:
+        return None, login_error[0], login_error[1]
+    user = get_session_user()
     if not user:
         return None, jsonify({'error': '用户不存在'}), 404
     return user, None, None

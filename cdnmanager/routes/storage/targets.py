@@ -2,29 +2,21 @@ import json
 import uuid
 from datetime import datetime
 
-from flask import Blueprint, jsonify, request, session
+from flask import Blueprint, jsonify, request
 
 from cdnmanager.common import STORAGE_PROVIDERS
-from cdnmanager.db.models import (
+from cdnmanager.db import (
     delete_storage_target,
     get_storage_credential,
     get_storage_target,
-    get_user,
     upsert_storage_target,
+    get_environment, 
+    get_project,
 )
-from cdnmanager.db.projects import get_environment, get_project
-from cdnmanager.providers.storage_service import ensure_browser_cors, get_adapter
+from cdnmanager.routes.common import require_admin
+from cdnmanager.providers.storage.storage_service import ensure_browser_cors, get_adapter
 
 storage_target_bp = Blueprint('storage_target_bp', __name__)
-
-
-def _require_admin():
-    if 'username' not in session:
-        return jsonify({'error': '未登录'}), 401
-    user = get_user(session['username'])
-    if not user or user.get('role') != 'admin':
-        return jsonify({'error': '无权限'}), 403
-    return None
 
 
 def _parse_binding(project_id, environment_id):
@@ -46,7 +38,7 @@ def _parse_binding(project_id, environment_id):
 
 @storage_target_bp.route('/save_storage_target', methods=['POST'])
 def save_storage_target_route():
-    denied = _require_admin()
+    denied = require_admin()
     if denied:
         return denied
 
@@ -116,7 +108,7 @@ def save_storage_target_route():
 
 @storage_target_bp.route('/delete_storage_target', methods=['POST'])
 def delete_storage_target_route():
-    denied = _require_admin()
+    denied = require_admin()
     if denied:
         return denied
     target_id = request.form.get('target_id', '').strip()

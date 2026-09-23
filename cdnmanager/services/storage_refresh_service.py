@@ -1,6 +1,6 @@
 """Resolve CDN domains from storage target project/env and refresh uploaded files."""
 
-from cdnmanager.db.models import load_domains
+from cdnmanager.db import load_domains
 from cdnmanager.routes.cdn.credentials import get_credential
 from cdnmanager.services.refresh_service import refresh_and_record
 

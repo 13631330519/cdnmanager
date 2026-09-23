@@ -30,8 +30,8 @@ if ROOT not in sys.path:
 
 from werkzeug.security import generate_password_hash
 
-from cdnmanager.db.models import ensure_database, get_user, upsert_user
-from cdnmanager.db.projects import (
+from cdnmanager.db import ensure_database, get_user, upsert_user
+from cdnmanager.db import (
     get_project,
     get_project_by_name,
     sync_user_project_authorization,

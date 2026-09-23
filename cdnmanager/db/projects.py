@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 
 from cdnmanager.common import can_manage_all_domains
-from cdnmanager.db.models import query_all, query_one, run_write
+from cdnmanager.db.connection import query_all, query_one, run_write
 
 
 def generate_api_key():
@@ -73,9 +73,16 @@ def upsert_project(project):
     def work(conn):
         conn.execute(
             '''
-            INSERT OR REPLACE INTO projects
+            INSERT INTO projects
             (id, name, description, api_key_secret, allowed_users, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                name = excluded.name,
+                description = excluded.description,
+                api_key_secret = excluded.api_key_secret,
+                allowed_users = excluded.allowed_users,
+                created_at = excluded.created_at,
+                updated_at = excluded.updated_at
             ''',
             (
                 project['id'],
@@ -142,9 +149,15 @@ def upsert_environment(environment):
     def work(conn):
         conn.execute(
             '''
-            INSERT OR REPLACE INTO project_environments
+            INSERT INTO project_environments
             (id, project_id, name, api_key_secret, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                project_id = excluded.project_id,
+                name = excluded.name,
+                api_key_secret = excluded.api_key_secret,
+                created_at = excluded.created_at,
+                updated_at = excluded.updated_at
             ''',
             (
                 environment['id'],
@@ -248,103 +261,3 @@ def sync_domain_tags_from_ids(project_id, environment_id):
     return projects, environments
 
 
-def migrate_env_storage_to_targets(conn):
-    columns = {row['name'] for row in conn.execute('PRAGMA table_info(storage_targets)').fetchall()}
-    if 'environment_id' not in columns:
-        return
-
-    rows = conn.execute(
-        'SELECT environment_id, storage_target_id FROM project_env_storage_targets'
-    ).fetchall()
-    for row in rows:
-        env = conn.execute(
-            'SELECT project_id FROM project_environments WHERE id = ?',
-            (row['environment_id'],),
-        ).fetchone()
-        if not env:
-            continue
-        conn.execute(
-            '''
-            UPDATE storage_targets
-            SET project_id = ?, environment_id = ?
-            WHERE id = ? AND (environment_id IS NULL OR environment_id = '')
-            ''',
-            (env['project_id'], row['environment_id'], row['storage_target_id']),
-        )
-
-
-def migrate_legacy_domain_tags(conn):
-    columns = {row['name'] for row in conn.execute('PRAGMA table_info(domains)').fetchall()}
-    if 'project_id' not in columns:
-        return
-
-    rows = conn.execute(
-        '''
-        SELECT domain, projects, environments, project_id, environment_id
-        FROM domains
-        '''
-    ).fetchall()
-    now = datetime.now().isoformat()
-
-    for row in rows:
-        if row['project_id']:
-            continue
-        projects = row['projects']
-        environments = row['environments']
-        if isinstance(projects, str):
-            try:
-                projects = json.loads(projects)
-            except Exception:
-                projects = []
-        if isinstance(environments, str):
-            try:
-                environments = json.loads(environments)
-            except Exception:
-                environments = []
-        if not projects:
-            continue
-
-        project_name = projects[0]
-        existing = conn.execute(
-            'SELECT id FROM projects WHERE name = ?', (project_name,),
-        ).fetchone()
-        if existing:
-            project_id = existing['id']
-        else:
-            project_id = uuid.uuid4().hex[:12]
-            conn.execute(
-                '''
-                INSERT INTO projects
-                (id, name, description, api_key_secret, allowed_users, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                ''',
-                (project_id, project_name, None, None, '[]', now, now),
-            )
-
-        environment_id = None
-        if environments:
-            env_name = environments[0]
-            existing_env = conn.execute(
-                '''
-                SELECT id FROM project_environments
-                WHERE project_id = ? AND name = ?
-                ''',
-                (project_id, env_name),
-            ).fetchone()
-            if existing_env:
-                environment_id = existing_env['id']
-            else:
-                environment_id = uuid.uuid4().hex[:12]
-                conn.execute(
-                    '''
-                    INSERT INTO project_environments
-                    (id, project_id, name, api_key_secret, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                    ''',
-                    (environment_id, project_id, env_name, None, now, now),
-                )
-
-        conn.execute(
-            'UPDATE domains SET project_id = ?, environment_id = ? WHERE domain = ?',
-            (project_id, environment_id, row['domain']),
-        )

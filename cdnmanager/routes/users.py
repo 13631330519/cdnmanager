@@ -1,12 +1,20 @@
 import secrets
 from datetime import datetime
 
-from flask import Blueprint, jsonify, request, session
+from flask import Blueprint, jsonify, request
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from cdnmanager.common import USER_ROLES
-from cdnmanager.db.models import delete_user, get_user, load_users, remove_user_from_domains, upsert_user
-from cdnmanager.db.projects import remove_user_from_projects, sync_user_project_authorization
+from cdnmanager.db import (
+    delete_user, 
+    get_user, 
+    load_users, 
+    remove_user_from_domains,
+    upsert_user,
+    remove_user_from_projects,
+    sync_user_project_authorization,
+)
+from cdnmanager.routes.common import get_session_user, require_admin, require_login
 
 user_bp = Blueprint('user_bp', __name__)
 
@@ -19,9 +27,10 @@ def _parse_project_ids(raw_value):
 
 @user_bp.route('/save_user', methods=['POST'])
 def save_user_route():
-    if 'username' not in session:
-        return jsonify({"error": "未登录"}), 401
-    current_user = get_user(session['username'])
+    denied = require_admin()
+    if denied:
+        return denied
+    current_user = get_session_user()
     if not current_user or current_user.get('role') != 'admin':
         return jsonify({"error": "无权限保存用户"}), 403
 
@@ -64,9 +73,10 @@ def save_user_route():
 
 @user_bp.route('/change_password', methods=['POST'])
 def change_password_route():
-    if 'username' not in session:
-        return jsonify({"error": "未登录"}), 401
-    current_user = get_user(session['username'])
+    login_error = require_login()
+    if login_error is not None:
+        return login_error
+    current_user = get_session_user()
     if not current_user:
         return jsonify({"error": "用户不存在"}), 404
 
@@ -93,9 +103,10 @@ def change_password_route():
 
 @user_bp.route('/delete_user', methods=['POST'])
 def delete_user_route():
-    if 'username' not in session:
-        return jsonify({"error": "未登录"}), 401
-    current_user = get_user(session['username'])
+    denied = require_admin()
+    if denied:
+        return denied
+    current_user = get_session_user()
     if not current_user or current_user.get('role') != 'admin':
         return jsonify({"error": "无权限删除用户"}), 403
 

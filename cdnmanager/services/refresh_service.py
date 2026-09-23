@@ -1,5 +1,8 @@
 """CDN refresh orchestration — single entry for submit, poll, and record."""
 
+import copy
+import threading
+import time
 from datetime import datetime
 
 from cdnmanager.common import (
@@ -7,15 +10,29 @@ from cdnmanager.common import (
     REFRESH_STATUS_FAILED,
     REFRESH_STATUS_REFRESHING,
 )
+from cdnmanager.db import (
+    insert_url_record,
+    update_domain_fields,
+    load_refreshing_domains,
+    load_refreshing_urls,
+    get_domain,
+    get_url_by_id,
+    update_url_by_id,
+    try_acquire_polling_lease,
+)
+from cdnmanager.providers.cdn import(
+    check_akamai_refresh, refresh_akamai,
+    check_alicdn_task, refresh_alicdn,
+    check_ctyun_task, refresh_ctyun,
+    check_lingzhi_task, refresh_lingzhi,
+    check_tencent_task, refresh_tencentcdn,
+    check_volcengine_task, refresh_volcengine,
+    refresh_x7host
+)
 from cdnmanager.routes.cdn.credentials import get_credential
-from cdnmanager.db.models import insert_url_record, update_domain_fields
-from cdnmanager.providers.akamai import check_akamai_refresh, refresh_akamai
-from cdnmanager.providers.alicdn import check_alicdn_task, refresh_alicdn
-from cdnmanager.providers.ctyun import check_ctyun_task, refresh_ctyun
-from cdnmanager.providers.lingzhi import check_lingzhi_task, refresh_lingzhi
-from cdnmanager.providers.tencent import check_tencent_task, refresh_tencentcdn
-from cdnmanager.providers.volcengine import check_volcengine_task, refresh_volcengine
-from cdnmanager.providers.x7host import refresh_x7host
+
+DOMAIN_POLL_FIELDS = ('refresh_status', 'refresh_task_status', 'refresh_task_detail', 'last_refreshed_at')
+URL_POLL_FIELDS = ('refresh_status', 'refresh_task_detail', 'completed_at')
 
 
 def map_task_status(status):
@@ -195,4 +212,68 @@ def poll_url_record(url_record):
         url_record['refresh_status'] = REFRESH_STATUS_FAILED
         url_record['refresh_task_detail'] = {'error': task_info.get('message')}
     return True
+
+
+def poll_domain_tasks_once():
+    snapshot = copy.deepcopy(load_refreshing_domains())
+    if not snapshot:
+        return
+    for polled_record in snapshot:
+        if not poll_domain_record(polled_record):
+            continue
+        domain_name = polled_record.get('domain')
+        if not domain_name:
+            continue
+        current = get_domain(domain_name)
+        if not current or current.get('refresh_status') != REFRESH_STATUS_REFRESHING:
+            continue
+        if current.get('task_id') != polled_record.get('task_id'):
+            continue
+        updates = {
+            field: polled_record.get(field)
+            for field in DOMAIN_POLL_FIELDS
+            if polled_record.get(field) is not None
+        }
+        if updates:
+            update_domain_fields(domain_name, updates)
+
+
+def poll_url_tasks_once():
+    snapshot = copy.deepcopy(load_refreshing_urls())
+    if not snapshot:
+        return
+    for polled_record in snapshot:
+        if not poll_url_record(polled_record):
+            continue
+        url_id = polled_record.get('id')
+        if not url_id:
+            continue
+        current = get_url_by_id(url_id)
+        if not current or current.get('refresh_status') != REFRESH_STATUS_REFRESHING:
+            continue
+        if current.get('task_id') != polled_record.get('task_id'):
+            continue
+        updates = {
+            field: polled_record.get(field)
+            for field in URL_POLL_FIELDS
+            if polled_record.get(field) is not None
+        }
+        if updates:
+            update_url_by_id(url_id, updates)
+
+
+def start_task_polling_thread():
+    def worker():
+        while True:
+            try:
+                if try_acquire_polling_lease():
+                    poll_domain_tasks_once()
+                    poll_url_tasks_once()
+            except Exception:
+                pass
+            time.sleep(30)
+
+    thread = threading.Thread(target=worker, daemon=True)
+    thread.start()
+    return thread
 

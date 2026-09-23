@@ -10,7 +10,7 @@ if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
 from cdnmanager import create_app
-from cdnmanager.db.models import ensure_database, get_storage_target, load_storage_targets
+from cdnmanager.db import ensure_database, load_storage_targets
 
 
 def _login(client, username='admin'):

@@ -3,10 +3,6 @@ import json
 
 DATA_DIR = os.environ.get('DATA_DIR', 'data')
 DATABASE_FILE = os.environ.get('DATABASE_FILE', os.path.join(DATA_DIR, 'cdn_manager.db'))
-USER_FILE = os.path.join(DATA_DIR, 'users.json')
-DOMAIN_FILE = os.path.join(DATA_DIR, 'domains.json')
-CREDENTIALS_FILE = os.path.join(DATA_DIR, 'provider_credentials.json')
-URL_FILE = os.path.join(DATA_DIR, 'urls.json')
 
 LOG_DIR = os.environ.get('LOG_DIR', 'logs')
 

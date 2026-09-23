@@ -14,7 +14,7 @@ from cdnmanager.common import (
     UPLOAD_JOB_RUNNING,
     UPLOAD_PRESIGN_BATCH_MAX,
 )
-from cdnmanager.db.models import (
+from cdnmanager.db import (
     get_storage_credential,
     get_storage_target,
     get_upload_file,
@@ -25,7 +25,7 @@ from cdnmanager.db.models import (
     list_upload_files,
     update_upload_job,
 )
-from cdnmanager.providers.storage_service import (
+from cdnmanager.providers.storage.storage_service import (
     build_object_key,
     get_adapter,
     total_parts_for,
@@ -160,7 +160,7 @@ def presign_put_batch(file_ids, origin=None):
             errors.append({'file_id': file_id, 'error': str(exc)})
             continue
 
-        from cdnmanager.providers.storage_service import ensure_browser_cors
+        from cdnmanager.providers.storage.storage_service import ensure_browser_cors
         cors_origins = [origin] if origin else ['*']
         try:
             ensure_browser_cors(adapter, credential, config, cors_origins)
@@ -175,7 +175,7 @@ def presign_put_batch(file_ids, origin=None):
             errors.append({'file_id': file_id, 'error': str(exc)})
             continue
         now = datetime.now().isoformat()
-        from cdnmanager.db.models import update_upload_file
+        from cdnmanager.db import update_upload_file
         update_upload_file(file_id, {
             'status': UPLOAD_FILE_UPLOADING,
             'started_at': file_record.get('started_at') or now,

@@ -9,7 +9,7 @@ from cdnmanager.config import (
     PERMANENT_SESSION_LIFETIME,
     SECRET_KEY,
 )
-from cdnmanager.db.models import ensure_database
+from cdnmanager.db import ensure_database
 from cdnmanager.routes import register_blueprints
 from cdnmanager.views import register_views
 
@@ -44,7 +44,7 @@ def create_app():
         return {'asset_version': max(versions) if versions else 1}
 
     if ENABLE_TASK_POLLING:
-        from cdnmanager.routes.cdn.domains import start_task_polling_thread
+        from cdnmanager.services.refresh_service import start_task_polling_thread
         start_task_polling_thread()
 
     from cdnmanager.config import ENABLE_UPLOAD_TIMEOUT_SCAN

@@ -14,14 +14,17 @@ from cdnmanager.common import (
 from cdnmanager.routes.cdn.credentials import get_credential
 from cdnmanager.routes.cdn.domains import find_bound_domain
 from cdnmanager.routes.projects import resolve_storage_target_for_domain
-from cdnmanager.db.models import (
+from cdnmanager.db import (
     get_upload_file,
     get_upload_job,
     list_upload_parts,
     recalculate_upload_job_stats,
     update_upload_file,
+    get_domain,
+    get_url_by_id, 
+    load_urls,
 )
-from cdnmanager.providers.storage_service import uses_multipart
+from cdnmanager.providers.storage.storage_service import uses_multipart
 from cdnmanager.services.storage_refresh_service import refresh_file_for_target
 from cdnmanager.services.api_auth_service import (
     verify_domain_job_signature,
@@ -33,7 +36,6 @@ from cdnmanager.services.upload_service import (
     presign_put_batch,
     verify_multipart_parts,
 )
-from cdnmanager.db.models import get_url_by_id, load_urls
 
 external_bp = Blueprint('external_bp', __name__)
 
@@ -57,7 +59,6 @@ def api_task_status():
         return jsonify({"success": False, "error": "domain 或 url_idx 参数必填"}), 400
 
     if domain:
-        from cdnmanager.db.models import get_domain
         target = get_domain(domain)
         if not target:
             return jsonify({"success": False, "error": "域名不存在"}), 404
@@ -168,7 +169,6 @@ def api_upload_init():
     if len(files) > UPLOAD_BATCH_INIT_SIZE:
         return jsonify({'success': False, 'error': f'首批最多 {UPLOAD_BATCH_INIT_SIZE} 个文件'}), 400
 
-    from cdnmanager.db.models import get_domain
     domain_record = get_domain(domain_name)
     if not domain_record:
         domain_record = find_bound_domain(domain_name)
@@ -229,7 +229,6 @@ def api_upload_presign():
     if len(file_ids) > UPLOAD_PRESIGN_BATCH_MAX:
         return jsonify({'success': False, 'error': f'单次最多 {UPLOAD_PRESIGN_BATCH_MAX} 个'}), 400
 
-    from cdnmanager.db.models import get_domain
     domain_record = get_domain(domain_name) or find_bound_domain(domain_name)
     if not domain_record:
         return jsonify({'success': False, 'error': '域名不存在'}), 404
@@ -265,7 +264,6 @@ def api_upload_complete():
     if not domain_name or not job_id or not file_id:
         return jsonify({'success': False, 'error': 'domain/job_id/file_id 必填'}), 400
 
-    from cdnmanager.db.models import get_domain
     domain_record = get_domain(domain_name) or find_bound_domain(domain_name)
     if not domain_record:
         return jsonify({'success': False, 'error': '域名不存在'}), 404
@@ -283,7 +281,7 @@ def api_upload_complete():
         return jsonify({'success': False, 'error': 'Job 无权限'}), 403
 
     from cdnmanager.routes.storage.uploads import _maybe_cleanup_job
-    from cdnmanager.providers.storage_service import total_parts_for
+    from cdnmanager.providers.storage.storage_service import total_parts_for
     from cdnmanager.services.upload_service import _job_storage_ctx
 
     try:

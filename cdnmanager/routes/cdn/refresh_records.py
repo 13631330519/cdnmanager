@@ -1,17 +1,19 @@
-from flask import Blueprint, jsonify, request, session
+from flask import Blueprint, jsonify, request
 
 from cdnmanager.common import PROVIDER_LABELS
 from cdnmanager.routes.cdn.domains import get_visible_domains
-from cdnmanager.db.models import get_user, load_url_records
+from cdnmanager.db import load_url_records
+from cdnmanager.routes.common import get_session_user, require_login
 
 refresh_records_bp = Blueprint('refresh_records_bp', __name__)
 
 
 @refresh_records_bp.route('/api/refresh_records', methods=['GET'])
 def api_refresh_records():
-    if 'username' not in session:
-        return jsonify({'error': '未登录'}), 401
-    user = get_user(session['username'])
+    login_error = require_login()
+    if login_error is not None:
+        return login_error
+    user = get_session_user()
     if not user:
         return jsonify({'error': '用户不存在'}), 404
 

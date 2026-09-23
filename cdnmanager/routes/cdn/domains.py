@@ -5,9 +5,9 @@ from datetime import datetime
 from flask import Blueprint, jsonify, request, session
 from cdnmanager.common import VALID_PROVIDERS, REFRESH_STATUS_NONE, REFRESH_STATUS_REFRESHING, REFRESH_STATUS_FAILED, CDN_CNAME_SUFFIXES, can_edit_domain_provider, can_manage_all_domains, log
 from cdnmanager.routes.cdn.credentials import get_credential
-from cdnmanager.db.models import (
+from cdnmanager.routes.common import get_session_user, require_login
+from cdnmanager.db import (
     load_domains,
-    load_users,
     get_domain,
     upsert_domain,
     update_domain_fields,
@@ -18,9 +18,12 @@ from cdnmanager.db.models import (
     load_refreshing_domains,
     load_refreshing_urls,
     try_acquire_polling_lease,
+    get_environment, 
+    get_project, 
+    sync_domain_tags_from_ids, 
+    user_can_access_project,
 )
-from cdnmanager.db.projects import get_environment, get_project, sync_domain_tags_from_ids, user_can_access_project
-from cdnmanager.providers.cdn_dns_sync import sync_cdn_cname
+from cdnmanager.providers.cdn import sync_cdn_cname
 from cdnmanager.services.refresh_service import (
     poll_domain_record,
     poll_url_record,
@@ -69,6 +72,16 @@ def parse_group_tags(raw_value):
         return []
     tags = [tag.strip() for tag in raw_value.split(',') if tag.strip()]
     return sorted(set(tags))
+
+
+def _get_session_user_or_error():
+    login_error = require_login()
+    if login_error is not None:
+        return None, login_error
+    user = get_session_user()
+    if not user:
+        return None, (jsonify({"error": "未登录"}), 401)
+    return user, None
 
 
 def parse_project_binding(form):
@@ -167,9 +180,9 @@ def find_bound_domain(host):
 
 @domain_bp.route('/add_domain', methods=['POST'])
 def add_domain():
-    if 'username' not in session:
-        return jsonify({"error": "未登录"}), 401
-    user = next((u for u in load_users() if u['username'] == session['username']), None)
+    user, auth_error = _get_session_user_or_error()
+    if auth_error:
+        return auth_error
     if user['role'] != 'admin':
         return jsonify({"error": "无权限添加域名"}), 403
     domain = request.form.get('domain', '').strip()
@@ -218,9 +231,9 @@ def add_domain():
 
 @domain_bp.route('/edit_domain', methods=['POST'])
 def edit_domain():
-    if 'username' not in session:
-        return jsonify({"error": "未登录"}), 401
-    user = next((u for u in load_users() if u['username'] == session['username']), None)
+    user, auth_error = _get_session_user_or_error()
+    if auth_error:
+        return auth_error
     if not can_edit_domain_provider(user.get('role')):
         return jsonify({"error": "无权限修改域名"}), 403
     domain = request.form.get('domain')
@@ -286,8 +299,9 @@ def edit_domain():
 
 @domain_bp.route('/refresh_domain', methods=['POST'])
 def refresh_domain():
-    if 'username' not in session:
-        return jsonify({"error": "未登录"}), 401
+    user, auth_error = _get_session_user_or_error()
+    if auth_error:
+        return auth_error
     domain = request.form.get('domain')
     if not domain:
         return jsonify({"error": "域名不能为空"}), 400
@@ -295,9 +309,6 @@ def refresh_domain():
     target = next((d for d in domains if d['domain'] == domain), None)
     if not target:
         return jsonify({"error": "域名不存在"}), 404
-    user = next((u for u in load_users() if u['username'] == session['username']), None)
-    if not user:
-        return jsonify({"error": "未登录"}), 401
     if not can_manage_all_domains(user.get('role')) and not user_can_access_domain(user['username'], user.get('role'), target):
         return jsonify({"error": "无权限刷新该域名"}), 403
     provider = target.get('provider')
@@ -342,9 +353,9 @@ def refresh_domain():
 
 @domain_bp.route('/delete_domain', methods=['POST'])
 def delete_domain():
-    if 'username' not in session:
-        return jsonify({"error": "未登录"}), 401
-    user = next((u for u in load_users() if u['username'] == session['username']), None)
+    user, auth_error = _get_session_user_or_error()
+    if auth_error:
+        return auth_error
     if user['role'] != 'admin':
         return jsonify({"error": "无权限删除域名"}), 403
     domain = request.form.get('domain')

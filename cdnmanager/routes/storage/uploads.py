@@ -7,7 +7,7 @@ from datetime import datetime
 
 import logging
 
-from flask import Blueprint, Response, jsonify, request, session, stream_with_context
+from flask import Blueprint, Response, jsonify, request, stream_with_context
 
 from cdnmanager.common import (
     UPLOAD_BATCH_INIT_SIZE,
@@ -22,7 +22,8 @@ from cdnmanager.common import (
     UPLOAD_PRESIGN_BATCH_MAX,
 )
 from cdnmanager.routes.cdn.credentials import get_credential
-from cdnmanager.db.models import (
+from cdnmanager.routes.common import get_session_user, require_login
+from cdnmanager.db import (
     cleanup_finished_upload_job,
     count_upload_files,
     count_upload_jobs,
@@ -42,7 +43,7 @@ from cdnmanager.db.models import (
     update_upload_job,
     update_upload_part,
 )
-from cdnmanager.providers.storage_service import (
+from cdnmanager.providers.storage.storage_service import (
     build_object_key,
     ensure_browser_cors,
     get_adapter,
@@ -72,9 +73,10 @@ def _maybe_cleanup_job(job_id):
 
 
 def _require_login():
-    if 'username' not in session:
-        return None, jsonify({'error': '未登录'}), 401
-    user = get_user(session['username'])
+    login_error = require_login()
+    if login_error is not None:
+        return None, login_error[0], login_error[1]
+    user = get_session_user()
     if not user:
         return None, jsonify({'error': '用户不存在'}), 404
     return user, None, None

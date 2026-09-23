@@ -14,7 +14,7 @@ from cdnmanager.common import (
     USER_ROLE_LABELS,
     VALID_PROVIDERS,
 )
-from cdnmanager.db.models import (
+from cdnmanager.db import (
     load_credentials,
     load_dns_credentials,
     load_root_domains,
@@ -22,8 +22,6 @@ from cdnmanager.db.models import (
     load_storage_targets,
     load_url_records,
     load_users,
-)
-from cdnmanager.db.projects import (
     filter_projects_tree,
     get_environment,
     get_project,
