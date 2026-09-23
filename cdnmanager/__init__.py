@@ -9,7 +9,8 @@ from cdnmanager.config import (
     PERMANENT_SESSION_LIFETIME,
     SECRET_KEY,
 )
-from cdnmanager.db import ensure_database
+import cdnmanager.db as db
+
 from cdnmanager.routes import register_blueprints
 from cdnmanager.views import register_views
 
@@ -28,7 +29,7 @@ def create_app():
     app.config['APP_PORT'] = APP_PORT
     app.permanent_session_lifetime = PERMANENT_SESSION_LIFETIME
 
-    ensure_database()
+    db.ensure_database()
     register_blueprints(app)
     register_views(app)
 

@@ -2,12 +2,8 @@ from datetime import datetime
 from flask import Blueprint, jsonify, request, session
 
 from cdnmanager.common import DNS_PROVIDERS, log
-from cdnmanager.db import (
-    delete_root_domain,
-    get_dns_credential,
-    get_root_domain,
-    upsert_root_domain,
-)
+import cdnmanager.db as db
+
 from cdnmanager.routes.common import require_admin
 from cdnmanager.providers.dns import list_dns_records, update_dns_record, create_dns_record, delete_dns_record
 
@@ -15,11 +11,11 @@ root_domain_bp = Blueprint('root_domain_bp', __name__)
 
 
 def _get_dns_context(root_domain_name):
-    root = get_root_domain(root_domain_name)
+    root = db.get_root_domain(root_domain_name)
     if not root:
         return None, jsonify({'error': '主域名不存在'}), 404
     provider = root.get('dns_provider')
-    credential = get_dns_credential(provider, root.get('dns_credential_id'))
+    credential = db.get_dns_credential(provider, root.get('dns_credential_id'))
     if not credential:
         return None, jsonify({'error': 'DNS 凭据不存在或已删除'}), 400
     return {'root': root, 'credential': credential}, None, None
@@ -40,13 +36,13 @@ def add_root_domain():
         return jsonify({'error': '主域名、名称、DNS 服务商和凭据必填'}), 400
     if dns_provider not in DNS_PROVIDERS:
         return jsonify({'error': '不支持的 DNS 服务商'}), 400
-    if get_root_domain(domain):
+    if db.get_root_domain(domain):
         return jsonify({'error': '主域名已存在'}), 400
-    if not get_dns_credential(dns_provider, dns_credential_id):
+    if not db.get_dns_credential(dns_provider, dns_credential_id):
         return jsonify({'error': '请选择有效的 DNS 凭据'}), 400
 
     now = datetime.now().isoformat()
-    upsert_root_domain({
+    db.upsert_root_domain({
         'domain': domain,
         'domain_name': domain_name,
         'dns_provider': dns_provider,
@@ -73,13 +69,13 @@ def edit_root_domain():
         return jsonify({'error': '主域名、名称、DNS 服务商和凭据必填'}), 400
     if dns_provider not in DNS_PROVIDERS:
         return jsonify({'error': '不支持的 DNS 服务商'}), 400
-    if not get_root_domain(domain):
+    if not db.get_root_domain(domain):
         return jsonify({'error': '主域名不存在'}), 404
-    if not get_dns_credential(dns_provider, dns_credential_id):
+    if not db.get_dns_credential(dns_provider, dns_credential_id):
         return jsonify({'error': '请选择有效的 DNS 凭据'}), 400
 
-    existing = get_root_domain(domain)
-    upsert_root_domain({
+    existing = db.get_root_domain(domain)
+    db.upsert_root_domain({
         'domain': domain,
         'domain_name': domain_name,
         'dns_provider': dns_provider,
@@ -100,7 +96,7 @@ def delete_root_domain_route():
     domain = request.form.get('domain', '').strip().lower()
     if not domain:
         return jsonify({'error': '主域名不能为空'}), 400
-    delete_root_domain(domain)
+    db.delete_root_domain(domain)
     return jsonify({'success': True, 'message': '主域名已删除'})
 
 

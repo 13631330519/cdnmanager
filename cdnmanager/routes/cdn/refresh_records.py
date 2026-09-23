@@ -1,7 +1,8 @@
 from flask import Blueprint, jsonify, request
 
 from cdnmanager.common import PROVIDER_LABELS
-from cdnmanager.db import get_visible_domains, load_url_records
+import cdnmanager.db as db
+
 from cdnmanager.routes.common import get_session_user, require_login
 
 refresh_records_bp = Blueprint('refresh_records_bp', __name__)
@@ -19,14 +20,14 @@ def api_refresh_records():
     domain = request.args.get('domain', '').strip() or None
     project_id = request.args.get('project_id', '').strip() or None
     environment_id = request.args.get('environment_id', '').strip() or None
-    visible_domains = get_visible_domains(user['username'], user.get('role'))
+    visible_domains = db.get_visible_domains(user['username'], user.get('role'))
     visible = {item['domain'] for item in visible_domains}
     domain_meta = {item['domain']: item for item in visible_domains}
 
     if domain and domain not in visible:
         return jsonify({'error': '无权限查看该域名'}), 403
 
-    records = load_url_records(domain=domain)
+    records = db.load_url_records(domain=domain)
     if not domain:
         records = [row for row in records if row.get('domain') in visible]
 

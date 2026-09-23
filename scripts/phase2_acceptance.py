@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import cdnmanager.db as db
 """Phase 2 upload acceptance benchmarks (run from repo root)."""
 
 import os
@@ -10,7 +11,7 @@ if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
 from cdnmanager import create_app
-from cdnmanager.db import ensure_database, load_storage_targets
+
 
 
 def _login(client, username='admin'):
@@ -19,7 +20,7 @@ def _login(client, username='admin'):
 
 
 def benchmark_batch_init(client, total_files=10000, batch_size=1000):
-    targets = load_storage_targets()
+    targets = db.load_storage_targets()
     if not targets:
         print('[SKIP] batch init: 无存储目标，跳过')
         return None
@@ -88,7 +89,7 @@ def benchmark_list_jobs(client):
 
 
 def main():
-    ensure_database()
+    db.ensure_database()
     app = create_app()
     with app.test_client() as client:
         _login(client)

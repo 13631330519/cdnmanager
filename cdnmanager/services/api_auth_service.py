@@ -6,7 +6,8 @@ from datetime import datetime
 
 from flask import current_app
 
-from cdnmanager.db import get_environment, get_project
+import cdnmanager.db as db
+
 
 
 def default_api_secret():
@@ -21,11 +22,11 @@ def resolve_domain_auth_context(domain_record):
     project = None
     environment = None
     if domain_record.get('project_id'):
-        project = get_project(domain_record['project_id'])
+        project = db.get_project(domain_record['project_id'])
     if domain_record.get('environment_id'):
-        environment = get_environment(domain_record['environment_id'])
+        environment = db.get_environment(domain_record['environment_id'])
         if environment and not project:
-            project = get_project(environment['project_id'])
+            project = db.get_project(environment['project_id'])
 
     has_custom_key = bool(
         (project and project.get('api_key_secret'))

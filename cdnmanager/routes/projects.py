@@ -3,22 +3,8 @@ from datetime import datetime
 
 from flask import Blueprint, jsonify, request
 
-from cdnmanager.db import (
-    _normalize_allowed_users,
-    delete_environment,
-    delete_project,
-    generate_api_key,
-    get_environment,
-    get_project,
-    get_environment_by_name,
-    get_project_by_name,
-    load_domains,
-    load_projects_tree,
-    sync_domain_tags_from_ids,
-    upsert_environment,
-    upsert_project,
-    update_domain_fields,
-)
+import cdnmanager.db as db
+
 
 from cdnmanager.routes.common import get_session_user, require_admin
 
@@ -37,7 +23,7 @@ def list_projects_route():
     user, err, status = _require_admin()
     if err:
         return err, status
-    return jsonify({'success': True, 'projects': load_projects_tree()})
+    return jsonify({'success': True, 'projects': db.load_projects_tree()})
 
 
 @project_bp.route('/api/projects', methods=['POST'])
@@ -49,15 +35,15 @@ def create_project_route():
     data = request.get_json(silent=True) or {}
     name = (data.get('name') or '').strip()
     description = (data.get('description') or '').strip() or None
-    allowed_users = _normalize_allowed_users(data.get('allowed_users'))
+    allowed_users = db._normalize_allowed_users(data.get('allowed_users'))
     if not name:
         return jsonify({'error': '项目名称必填'}), 400
-    if get_project_by_name(name):
+    if db.get_project_by_name(name):
         return jsonify({'error': '项目名称已存在'}), 400
 
     now = datetime.now().isoformat()
     project_id = uuid.uuid4().hex[:12]
-    upsert_project({
+    db.upsert_project({
         'id': project_id,
         'name': name,
         'description': description,
@@ -66,7 +52,7 @@ def create_project_route():
         'created_at': now,
         'updated_at': now,
     })
-    return jsonify({'success': True, 'project': get_project(project_id)})
+    return jsonify({'success': True, 'project': db.get_project(project_id)})
 
 
 @project_bp.route('/api/projects/<project_id>', methods=['PUT'])
@@ -75,7 +61,7 @@ def update_project_route(project_id):
     if err:
         return err, status
 
-    project = get_project(project_id)
+    project = db.get_project(project_id)
     if not project:
         return jsonify({'error': '项目不存在'}), 404
 
@@ -86,11 +72,11 @@ def update_project_route(project_id):
     if not name:
         return jsonify({'error': '项目名称必填'}), 400
 
-    existing = get_project_by_name(name)
+    existing = db.get_project_by_name(name)
     if existing and existing['id'] != project_id:
         return jsonify({'error': '项目名称已存在'}), 400
 
-    upsert_project({
+    db.upsert_project({
         **project,
         'name': name,
         'description': description,
@@ -98,7 +84,7 @@ def update_project_route(project_id):
         'updated_at': datetime.now().isoformat(),
     })
     _sync_domains_for_project(project_id)
-    return jsonify({'success': True, 'project': get_project(project_id)})
+    return jsonify({'success': True, 'project': db.get_project(project_id)})
 
 
 @project_bp.route('/api/projects/<project_id>', methods=['DELETE'])
@@ -106,19 +92,19 @@ def delete_project_route(project_id):
     user, err, status = _require_admin()
     if err:
         return err, status
-    if not get_project(project_id):
+    if not db.get_project(project_id):
         return jsonify({'error': '项目不存在'}), 404
 
-    for domain in load_domains():
+    for domain in db.load_domains():
         if domain.get('project_id') == project_id:
-            update_domain_fields(domain['domain'], {
+            db.update_domain_fields(domain['domain'], {
                 'project_id': None,
                 'environment_id': None,
                 'projects': [],
                 'environments': [],
             })
 
-    delete_project(project_id)
+    db.delete_project(project_id)
     return jsonify({'success': True, 'message': '项目已删除'})
 
 
@@ -127,12 +113,12 @@ def regenerate_project_key_route(project_id):
     user, err, status = _require_admin()
     if err:
         return err, status
-    project = get_project(project_id)
+    project = db.get_project(project_id)
     if not project:
         return jsonify({'error': '项目不存在'}), 404
 
-    api_key = generate_api_key()
-    upsert_project({
+    api_key = db.generate_api_key()
+    db.upsert_project({
         **project,
         'api_key_secret': api_key,
         'updated_at': datetime.now().isoformat(),
@@ -145,7 +131,7 @@ def create_environment_route(project_id):
     user, err, status = _require_admin()
     if err:
         return err, status
-    if not get_project(project_id):
+    if not db.get_project(project_id):
         return jsonify({'error': '项目不存在'}), 404
 
     data = request.get_json(silent=True) or {}
@@ -153,12 +139,12 @@ def create_environment_route(project_id):
     if not name:
         return jsonify({'error': '环境名称必填'}), 400
 
-    if get_environment_by_name(project_id, name):
+    if db.get_environment_by_name(project_id, name):
         return jsonify({'error': '环境名称已存在'}), 400
 
     now = datetime.now().isoformat()
     environment_id = uuid.uuid4().hex[:12]
-    upsert_environment({
+    db.upsert_environment({
         'id': environment_id,
         'project_id': project_id,
         'name': name,
@@ -166,7 +152,7 @@ def create_environment_route(project_id):
         'created_at': now,
         'updated_at': now,
     })
-    return jsonify({'success': True, 'environment': get_environment(environment_id)})
+    return jsonify({'success': True, 'environment': db.get_environment(environment_id)})
 
 
 @project_bp.route('/api/projects/<project_id>/environments/<environment_id>', methods=['PUT'])
@@ -175,7 +161,7 @@ def update_environment_route(project_id, environment_id):
     if err:
         return err, status
 
-    environment = get_environment(environment_id)
+    environment = db.get_environment(environment_id)
     if not environment or environment['project_id'] != project_id:
         return jsonify({'error': '环境不存在'}), 404
 
@@ -184,17 +170,17 @@ def update_environment_route(project_id, environment_id):
     if not name:
         return jsonify({'error': '环境名称必填'}), 400
 
-    existing = get_environment_by_name(project_id, name)
+    existing = db.get_environment_by_name(project_id, name)
     if existing and existing['id'] != environment_id:
         return jsonify({'error': '环境名称已存在'}), 400
 
-    upsert_environment({
+    db.upsert_environment({
         **environment,
         'name': name,
         'updated_at': datetime.now().isoformat(),
     })
     _sync_domains_for_environment(environment_id)
-    return jsonify({'success': True, 'environment': get_environment(environment_id)})
+    return jsonify({'success': True, 'environment': db.get_environment(environment_id)})
 
 
 @project_bp.route('/api/projects/<project_id>/environments/<environment_id>', methods=['DELETE'])
@@ -203,20 +189,20 @@ def delete_environment_route(project_id, environment_id):
     if err:
         return err, status
 
-    environment = get_environment(environment_id)
+    environment = db.get_environment(environment_id)
     if not environment or environment['project_id'] != project_id:
         return jsonify({'error': '环境不存在'}), 404
 
-    for domain in load_domains():
+    for domain in db.load_domains():
         if domain.get('environment_id') == environment_id:
-            projects, environments = sync_domain_tags_from_ids(domain.get('project_id'), None)
-            update_domain_fields(domain['domain'], {
+            projects, environments = db.sync_domain_tags_from_ids(domain.get('project_id'), None)
+            db.update_domain_fields(domain['domain'], {
                 'environment_id': None,
                 'projects': projects,
                 'environments': [],
             })
 
-    delete_environment(environment_id)
+    db.delete_environment(environment_id)
     return jsonify({'success': True, 'message': '环境已删除'})
 
 
@@ -226,12 +212,12 @@ def regenerate_environment_key_route(project_id, environment_id):
     if err:
         return err, status
 
-    environment = get_environment(environment_id)
+    environment = db.get_environment(environment_id)
     if not environment or environment['project_id'] != project_id:
         return jsonify({'error': '环境不存在'}), 404
 
-    api_key = generate_api_key()
-    upsert_environment({
+    api_key = db.generate_api_key()
+    db.upsert_environment({
         **environment,
         'api_key_secret': api_key,
         'updated_at': datetime.now().isoformat(),
@@ -240,20 +226,20 @@ def regenerate_environment_key_route(project_id, environment_id):
 
 
 def _sync_domains_for_project(project_id):
-    project = get_project(project_id)
+    project = db.get_project(project_id)
     if not project:
         return
-    for domain in load_domains():
+    for domain in db.load_domains():
         if domain.get('project_id') == project_id:
-            projects, environments = sync_domain_tags_from_ids(project_id, domain.get('environment_id'))
-            update_domain_fields(domain['domain'], {'projects': projects, 'environments': environments})
+            projects, environments = db.sync_domain_tags_from_ids(project_id, domain.get('environment_id'))
+            db.update_domain_fields(domain['domain'], {'projects': projects, 'environments': environments})
 
 
 def _sync_domains_for_environment(environment_id):
-    environment = get_environment(environment_id)
+    environment = db.get_environment(environment_id)
     if not environment:
         return
-    for domain in load_domains():
+    for domain in db.load_domains():
         if domain.get('environment_id') == environment_id:
-            projects, environments = sync_domain_tags_from_ids(domain.get('project_id'), environment_id)
-            update_domain_fields(domain['domain'], {'projects': projects, 'environments': environments})
+            projects, environments = db.sync_domain_tags_from_ids(domain.get('project_id'), environment_id)
+            db.update_domain_fields(domain['domain'], {'projects': projects, 'environments': environments})

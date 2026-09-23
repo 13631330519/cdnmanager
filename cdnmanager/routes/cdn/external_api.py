@@ -11,19 +11,8 @@ from cdnmanager.common import (
     UPLOAD_PRESIGN_BATCH_MAX,
     REFRESH_STATUS_NONE,
 )
-from cdnmanager.db import (
-    find_bound_domain,
-    get_credential,
-    get_upload_file,
-    get_upload_job,
-    list_upload_parts,
-    recalculate_upload_job_stats,
-    update_upload_file,
-    get_domain,
-    get_url_by_id,
-    load_urls,
-    resolve_storage_target_for_domain,
-)
+import cdnmanager.db as db
+
 from cdnmanager.providers.storage.storage_service import uses_multipart
 from cdnmanager.services.storage_refresh_service import refresh_file_for_target
 from cdnmanager.services.api_auth_service import (
@@ -59,7 +48,7 @@ def api_task_status():
         return jsonify({"success": False, "error": "domain 或 url_idx 参数必填"}), 400
 
     if domain:
-        target = get_domain(domain)
+        target = db.get_domain(domain)
         if not target:
             return jsonify({"success": False, "error": "域名不存在"}), 404
 
@@ -79,12 +68,12 @@ def api_task_status():
             url_id = int(url_idx)
         except (ValueError, TypeError):
             return jsonify({"success": False, "error": "url_idx 格式不正确"}), 400
-        target = get_url_by_id(url_id)
+        target = db.get_url_by_id(url_id)
     else:
         url = request.args.get('url')
         if not url:
             return jsonify({"success": False, "error": "url 或 url_idx 必填"}), 400
-        target = next((u for u in load_urls() if u.get('url') == url), None)
+        target = next((u for u in db.load_urls() if u.get('url') == url), None)
 
     if not target:
         return jsonify({"success": False, "error": "URL 记录不存在"}), 404
@@ -119,7 +108,7 @@ def api_refresh_url():
     if not host:
         return jsonify({"success": False, "error": "URL 域名解析失败"}), 400
 
-    domain_record = find_bound_domain(host)
+    domain_record = db.find_bound_domain(host)
     if not domain_record:
         return jsonify({"success": False, "error": "未找到对应的已绑定域名"}), 404
 
@@ -130,7 +119,7 @@ def api_refresh_url():
 
     provider = domain_record.get('provider')
     credential_id = domain_record.get('credential_id')
-    credential = get_credential(provider, credential_id)
+    credential = db.get_credential(provider, credential_id)
     if not credential:
         return jsonify({"success": False, "error": "域名绑定的凭据不存在或已删除"}), 400
 
@@ -169,9 +158,9 @@ def api_upload_init():
     if len(files) > UPLOAD_BATCH_INIT_SIZE:
         return jsonify({'success': False, 'error': f'首批最多 {UPLOAD_BATCH_INIT_SIZE} 个文件'}), 400
 
-    domain_record = get_domain(domain_name)
+    domain_record = db.get_domain(domain_name)
     if not domain_record:
-        domain_record = find_bound_domain(domain_name)
+        domain_record = db.find_bound_domain(domain_name)
     if not domain_record:
         return jsonify({'success': False, 'error': '域名不存在'}), 404
 
@@ -180,7 +169,7 @@ def api_upload_init():
     if not ok:
         return jsonify({'success': False, 'error': error}), 403 if error in {'验签失败'} or (error and 'Key' in error) else 400
 
-    target, target_error = resolve_storage_target_for_domain(domain_record, storage_target_id)
+    target, target_error = db.resolve_storage_target_for_domain(domain_record, storage_target_id)
     if target_error:
         return jsonify({'success': False, 'error': target_error}), 400
 
@@ -229,7 +218,7 @@ def api_upload_presign():
     if len(file_ids) > UPLOAD_PRESIGN_BATCH_MAX:
         return jsonify({'success': False, 'error': f'单次最多 {UPLOAD_PRESIGN_BATCH_MAX} 个'}), 400
 
-    domain_record = get_domain(domain_name) or find_bound_domain(domain_name)
+    domain_record = db.get_domain(domain_name) or db.find_bound_domain(domain_name)
     if not domain_record:
         return jsonify({'success': False, 'error': '域名不存在'}), 404
 
@@ -237,12 +226,12 @@ def api_upload_presign():
     if not ok:
         return jsonify({'success': False, 'error': error}), 403 if error == '验签失败' else 400
 
-    job = get_upload_job(job_id)
+    job = db.get_upload_job(job_id)
     if not job or job['username'] != _api_user(domain_record['domain']):
         return jsonify({'success': False, 'error': 'Job 不存在或无权限'}), 404
 
     for file_id in file_ids:
-        file_record = get_upload_file(file_id)
+        file_record = db.get_upload_file(file_id)
         if not file_record or file_record['job_id'] != job_id:
             return jsonify({'success': False, 'error': f'文件不存在: {file_id}'}), 404
 
@@ -264,7 +253,7 @@ def api_upload_complete():
     if not domain_name or not job_id or not file_id:
         return jsonify({'success': False, 'error': 'domain/job_id/file_id 必填'}), 400
 
-    domain_record = get_domain(domain_name) or find_bound_domain(domain_name)
+    domain_record = db.get_domain(domain_name) or db.find_bound_domain(domain_name)
     if not domain_record:
         return jsonify({'success': False, 'error': '域名不存在'}), 404
 
@@ -272,11 +261,11 @@ def api_upload_complete():
     if not ok:
         return jsonify({'success': False, 'error': error}), 403 if error == '验签失败' else 400
 
-    file_record = get_upload_file(file_id)
+    file_record = db.get_upload_file(file_id)
     if not file_record or file_record['job_id'] != job_id:
         return jsonify({'success': False, 'error': '文件任务不存在'}), 404
 
-    job = get_upload_job(job_id)
+    job = db.get_upload_job(job_id)
     if not job or job['username'] != _api_user(domain_record['domain']):
         return jsonify({'success': False, 'error': 'Job 无权限'}), 403
 
@@ -289,25 +278,25 @@ def api_upload_complete():
     except ValueError as exc:
         return jsonify({'success': False, 'error': str(exc)}), 400
 
-    update_upload_file(file_id, {'status': UPLOAD_FILE_VERIFYING})
+    db.update_upload_file(file_id, {'status': UPLOAD_FILE_VERIFYING})
 
     if file_record.get('upload_id'):
         expected_parts = total_parts_for(file_record['size'])
         local_parts = [
             {'part_number': part['part_number'], 'etag': part['etag']}
-            for part in list_upload_parts(file_id)
+            for part in db.list_upload_parts(file_id)
             if part.get('status') == 'completed' and part.get('etag')
         ]
         parts, verify_err = verify_multipart_parts(
             adapter, credential, config, file_record, local_parts,
         )
         if verify_err or not parts:
-            update_upload_file(file_id, {
+            db.update_upload_file(file_id, {
                 'status': UPLOAD_FILE_FAILED,
                 'error': verify_err or '分片校验失败',
                 'finished_at': datetime.now().isoformat(),
             })
-            recalculate_upload_job_stats(job_id)
+            db.recalculate_upload_job_stats(job_id)
             _maybe_cleanup_job(job_id)
             return jsonify({'success': False, 'error': verify_err or '分片校验失败'}), 400
         try:
@@ -315,12 +304,12 @@ def api_upload_complete():
                 credential, config, file_record['storage_key'], file_record['upload_id'], parts,
             ) or etag
         except Exception as exc:
-            update_upload_file(file_id, {
+            db.update_upload_file(file_id, {
                 'status': UPLOAD_FILE_FAILED,
                 'error': str(exc),
                 'finished_at': datetime.now().isoformat(),
             })
-            recalculate_upload_job_stats(job_id)
+            db.recalculate_upload_job_stats(job_id)
             _maybe_cleanup_job(job_id)
             return jsonify({'success': False, 'error': str(exc)}), 400
 
@@ -328,12 +317,12 @@ def api_upload_complete():
         credential, config, file_record['storage_key'], file_record['size'],
     )
     if not verify.get('ok'):
-        update_upload_file(file_id, {
+        db.update_upload_file(file_id, {
             'status': UPLOAD_FILE_FAILED,
             'error': verify.get('error') or '校验失败',
             'finished_at': datetime.now().isoformat(),
         })
-        recalculate_upload_job_stats(job_id)
+        db.recalculate_upload_job_stats(job_id)
         _maybe_cleanup_job(job_id)
         return jsonify({'success': False, 'error': verify.get('error')}), 400
 
@@ -344,7 +333,7 @@ def api_upload_complete():
         if refresh_result and refresh_result.get('results'):
             public_url = refresh_result['results'][0].get('url')
 
-    update_upload_file(file_id, {
+    db.update_upload_file(file_id, {
         'status': UPLOAD_FILE_COMPLETED,
         'bytes_uploaded': file_record['size'],
         'etag': verify.get('etag') or etag,
@@ -352,7 +341,7 @@ def api_upload_complete():
         'finished_at': datetime.now().isoformat(),
         'last_heartbeat_at': datetime.now().isoformat(),
     })
-    recalculate_upload_job_stats(job_id)
+    db.recalculate_upload_job_stats(job_id)
     _maybe_cleanup_job(job_id)
 
     return jsonify({

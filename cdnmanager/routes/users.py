@@ -5,15 +5,8 @@ from flask import Blueprint, jsonify, request
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from cdnmanager.common import USER_ROLES
-from cdnmanager.db import (
-    delete_user, 
-    get_user, 
-    load_users, 
-    remove_user_from_domains,
-    upsert_user,
-    remove_user_from_projects,
-    sync_user_project_authorization,
-)
+import cdnmanager.db as db
+
 from cdnmanager.routes.common import get_session_user, require_admin, require_login
 
 user_bp = Blueprint('user_bp', __name__)
@@ -43,7 +36,7 @@ def save_user_route():
     if role not in USER_ROLES:
         return jsonify({"error": "无效的角色"}), 400
 
-    existing = get_user(username)
+    existing = db.get_user(username)
     generated_password = None
     if not existing:
         if not password:
@@ -53,7 +46,7 @@ def save_user_route():
     else:
         message = "用户已更新"
 
-    upsert_user({
+    db.upsert_user({
         'username': username,
         'password': generate_password_hash(password) if password else existing.get('password'),
         'role': role,
@@ -61,9 +54,9 @@ def save_user_route():
         'updated_at': datetime.now().isoformat(),
     })
     if role != 'admin':
-        sync_user_project_authorization(username, project_ids)
+        db.sync_user_project_authorization(username, project_ids)
     else:
-        remove_user_from_projects(username)
+        db.remove_user_from_projects(username)
 
     response = {"success": True, "message": message}
     if generated_password:
@@ -93,7 +86,7 @@ def change_password_route():
     if not check_password_hash(current_user['password'], old_password):
         return jsonify({"error": "当前密码不正确"}), 400
 
-    upsert_user({
+    db.upsert_user({
         **current_user,
         'password': generate_password_hash(new_password),
         'updated_at': datetime.now().isoformat(),
@@ -118,11 +111,11 @@ def delete_user_route():
     if username == 'admin':
         return jsonify({"error": "无法删除超级管理员"}), 400
 
-    users = load_users()
+    users = db.load_users()
     if not any(u['username'] == username for u in users):
         return jsonify({"error": "用户不存在"}), 404
 
-    delete_user(username)
-    remove_user_from_domains(username)
-    remove_user_from_projects(username)
+    db.delete_user(username)
+    db.remove_user_from_domains(username)
+    db.remove_user_from_projects(username)
     return jsonify({"success": True, "message": "用户已删除"})

@@ -14,17 +14,8 @@ from cdnmanager.common import (
     UPLOAD_JOB_RUNNING,
     UPLOAD_PRESIGN_BATCH_MAX,
 )
-from cdnmanager.db import (
-    get_storage_credential,
-    get_storage_target,
-    get_upload_file,
-    get_upload_job,
-    increment_upload_job_totals,
-    insert_upload_files,
-    insert_upload_job,
-    list_upload_files,
-    update_upload_job,
-)
+import cdnmanager.db as db
+
 from cdnmanager.providers.storage.storage_service import (
     build_object_key,
     get_adapter,
@@ -68,7 +59,7 @@ def build_file_rows(target, job_id, remote_prefix, files):
 
 
 def create_upload_job_shell(user, storage_target_id, remote_prefix, refresh_after, first_batch=None):
-    target = get_storage_target(storage_target_id)
+    target = db.get_storage_target(storage_target_id)
     if not target:
         raise ValueError('存储目标不存在')
 
@@ -79,7 +70,7 @@ def create_upload_job_shell(user, storage_target_id, remote_prefix, refresh_afte
     job_id = uuid.uuid4().hex[:16]
     rows, total_bytes = build_file_rows(target, job_id, remote_prefix, first_batch) if first_batch else ([], 0)
 
-    insert_upload_job({
+    db.insert_upload_job({
         'id': job_id,
         'username': user['username'],
         'storage_target_id': storage_target_id,
@@ -95,12 +86,12 @@ def create_upload_job_shell(user, storage_target_id, remote_prefix, refresh_afte
         'finished_at': None,
     })
     if rows:
-        insert_upload_files(rows)
+        db.insert_upload_files(rows)
     return job_id, rows, target
 
 
 def append_manifest_batch(job_id, files):
-    job = get_upload_job(job_id)
+    job = db.get_upload_job(job_id)
     if not job:
         raise ValueError('Job 不存在')
     if job['status'] not in {UPLOAD_JOB_PENDING, UPLOAD_JOB_RUNNING}:
@@ -111,23 +102,23 @@ def append_manifest_batch(job_id, files):
     if job['total_files'] + len(files) > UPLOAD_JOB_MAX_FILES:
         raise ValueError(f'Job 总文件数不能超过 {UPLOAD_JOB_MAX_FILES}')
 
-    target = get_storage_target(job['storage_target_id'])
+    target = db.get_storage_target(job['storage_target_id'])
     if not target:
         raise ValueError('存储目标不存在')
 
     rows, total_bytes = build_file_rows(target, job_id, job.get('remote_prefix') or '', files)
-    insert_upload_files(rows)
-    increment_upload_job_totals(job_id, len(rows), total_bytes)
+    db.insert_upload_files(rows)
+    db.increment_upload_job_totals(job_id, len(rows), total_bytes)
     if job['status'] == UPLOAD_JOB_PENDING:
-        update_upload_job(job_id, {'status': UPLOAD_JOB_PENDING})
+        db.update_upload_job(job_id, {'status': UPLOAD_JOB_PENDING})
     return rows
 
 
 def _job_storage_ctx(job):
-    target = get_storage_target(job['storage_target_id'])
+    target = db.get_storage_target(job['storage_target_id'])
     if not target:
         raise ValueError('存储目标不存在')
-    credential = get_storage_credential(target['provider'], target['credential_id'])
+    credential = db.get_storage_credential(target['provider'], target['credential_id'])
     if not credential:
         raise ValueError('存储凭据不存在')
     config = target.get('target_config') or {}
@@ -142,7 +133,7 @@ def presign_put_batch(file_ids, origin=None):
     results = []
     errors = []
     for file_id in file_ids:
-        file_record = get_upload_file(file_id)
+        file_record = db.get_upload_file(file_id)
         if not file_record:
             errors.append({'file_id': file_id, 'error': '文件不存在'})
             continue
@@ -153,7 +144,7 @@ def presign_put_batch(file_ids, origin=None):
             errors.append({'file_id': file_id, 'error': '大文件请使用 start/multipart'})
             continue
 
-        job = get_upload_job(file_record['job_id'])
+        job = db.get_upload_job(file_record['job_id'])
         try:
             target, credential, config, adapter = _job_storage_ctx(job)
         except ValueError as exc:
@@ -175,14 +166,13 @@ def presign_put_batch(file_ids, origin=None):
             errors.append({'file_id': file_id, 'error': str(exc)})
             continue
         now = datetime.now().isoformat()
-        from cdnmanager.db import update_upload_file
-        update_upload_file(file_id, {
+        db.update_upload_file(file_id, {
             'status': UPLOAD_FILE_UPLOADING,
             'started_at': file_record.get('started_at') or now,
             'last_heartbeat_at': now,
             'error': None,
         })
-        update_upload_job(job['id'], {'status': UPLOAD_JOB_RUNNING})
+        db.update_upload_job(job['id'], {'status': UPLOAD_JOB_RUNNING})
         results.append({
             'file_id': file_id,
             'mode': 'put',
@@ -229,7 +219,7 @@ def batch_refresh_cdn(job, target, limit=200):
     refreshed = failed = 0
     offset = 0
     while refreshed + failed < limit:
-        files = list_upload_files(job['id'], status=UPLOAD_FILE_COMPLETED, limit=100, offset=offset)
+        files = db.list_upload_files(job['id'], status=UPLOAD_FILE_COMPLETED, limit=100, offset=offset)
         if not files:
             break
         offset += len(files)

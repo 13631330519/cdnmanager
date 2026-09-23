@@ -1,6 +1,7 @@
 """Resolve CDN domains from storage target project/env and refresh uploaded files."""
 
-from cdnmanager.db import get_credential, load_domains
+import cdnmanager.db as db
+
 from cdnmanager.services.refresh_service import refresh_and_record
 
 
@@ -26,7 +27,7 @@ def find_domains_for_storage_target(target):
         return []
 
     domains = []
-    for domain in load_domains():
+    for domain in db.load_domains():
         if domain.get('environment_id') != environment_id:
             continue
         if project_id and domain.get('project_id') != project_id:
@@ -49,7 +50,7 @@ def refresh_file_for_target(target, storage_key):
     refreshed = failed = 0
     for domain_record in domains:
         urls = build_cdn_file_urls(domain_record['domain'], storage_key)
-        credential = get_credential(domain_record.get('provider'), domain_record.get('credential_id'))
+        credential = db.get_credential(domain_record.get('provider'), domain_record.get('credential_id'))
         if not credential:
             failed += 1
             results.append({

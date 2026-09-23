@@ -10,17 +10,8 @@ from cdnmanager.common import (
     REFRESH_STATUS_FAILED,
     REFRESH_STATUS_REFRESHING,
 )
-from cdnmanager.db import (
-    get_credential,
-    insert_url_record,
-    update_domain_fields,
-    load_refreshing_domains,
-    load_refreshing_urls,
-    get_domain,
-    get_url_by_id,
-    update_url_by_id,
-    try_acquire_polling_lease,
-)
+import cdnmanager.db as db
+
 from cdnmanager.providers.cdn import(
     check_akamai_refresh, refresh_akamai,
     check_alicdn_task, refresh_alicdn,
@@ -99,13 +90,13 @@ def record_domain_refresh(domain_name, result):
         'refresh_status': refresh_status,
         'last_refreshed_at': datetime.now().isoformat(),
     }
-    update_domain_fields(domain_name, updates)
+    db.update_domain_fields(domain_name, updates)
     return updates
 
 
 def record_url_refresh(domain, provider, credential_id, result, url):
     refresh_status = normalize_refresh_status(result)
-    insert_url_record({
+    db.insert_url_record({
         'domain': domain,
         'url': url,
         'provider': provider,
@@ -145,7 +136,7 @@ def poll_domain_record(domain_record):
 
     provider = domain_record.get('provider')
     credential_id = domain_record.get('credential_id')
-    credential = get_credential(provider, credential_id)
+    credential = db.get_credential(provider, credential_id)
     if not credential:
         domain_record['refresh_status'] = REFRESH_STATUS_FAILED
         domain_record['refresh_task_status'] = None
@@ -185,7 +176,7 @@ def poll_url_record(url_record):
 
     provider = url_record.get('provider')
     credential_id = url_record.get('credential_id')
-    credential = get_credential(provider, credential_id)
+    credential = db.get_credential(provider, credential_id)
     if not credential:
         url_record['refresh_status'] = REFRESH_STATUS_FAILED
         url_record['refresh_task_detail'] = {'error': '绑定凭据不存在'}
@@ -214,7 +205,7 @@ def poll_url_record(url_record):
 
 
 def poll_domain_tasks_once():
-    snapshot = copy.deepcopy(load_refreshing_domains())
+    snapshot = copy.deepcopy(db.load_refreshing_domains())
     if not snapshot:
         return
     for polled_record in snapshot:
@@ -223,7 +214,7 @@ def poll_domain_tasks_once():
         domain_name = polled_record.get('domain')
         if not domain_name:
             continue
-        current = get_domain(domain_name)
+        current = db.get_domain(domain_name)
         if not current or current.get('refresh_status') != REFRESH_STATUS_REFRESHING:
             continue
         if current.get('task_id') != polled_record.get('task_id'):
@@ -234,11 +225,11 @@ def poll_domain_tasks_once():
             if polled_record.get(field) is not None
         }
         if updates:
-            update_domain_fields(domain_name, updates)
+            db.update_domain_fields(domain_name, updates)
 
 
 def poll_url_tasks_once():
-    snapshot = copy.deepcopy(load_refreshing_urls())
+    snapshot = copy.deepcopy(db.load_refreshing_urls())
     if not snapshot:
         return
     for polled_record in snapshot:
@@ -247,7 +238,7 @@ def poll_url_tasks_once():
         url_id = polled_record.get('id')
         if not url_id:
             continue
-        current = get_url_by_id(url_id)
+        current = db.get_url_by_id(url_id)
         if not current or current.get('refresh_status') != REFRESH_STATUS_REFRESHING:
             continue
         if current.get('task_id') != polled_record.get('task_id'):
@@ -258,14 +249,14 @@ def poll_url_tasks_once():
             if polled_record.get(field) is not None
         }
         if updates:
-            update_url_by_id(url_id, updates)
+            db.update_url_by_id(url_id, updates)
 
 
 def start_task_polling_thread():
     def worker():
         while True:
             try:
-                if try_acquire_polling_lease():
+                if db.try_acquire_polling_lease():
                     poll_domain_tasks_once()
                     poll_url_tasks_once()
             except Exception:

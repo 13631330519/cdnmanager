@@ -1,6 +1,7 @@
 from flask import jsonify
 
-from cdnmanager.db import get_user
+import cdnmanager.db as db
+
 
 
 def get_session_user():
@@ -9,7 +10,7 @@ def get_session_user():
     username = session.get('username')
     if not username:
         return None
-    user = get_user(username)
+    user = db.get_user(username)
     if not user:
         return None
     return user

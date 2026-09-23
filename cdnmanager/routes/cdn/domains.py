@@ -4,25 +4,8 @@ import time
 from datetime import datetime
 from flask import Blueprint, jsonify, request, session
 from cdnmanager.common import VALID_PROVIDERS, REFRESH_STATUS_NONE, REFRESH_STATUS_REFRESHING, REFRESH_STATUS_FAILED, CDN_CNAME_SUFFIXES, can_edit_domain_provider, can_manage_all_domains, log
-from cdnmanager.db import (
-    find_bound_domain,
-    get_credential,
-    get_domain,
-    get_visible_domains,
-    load_domains,
-    upsert_domain,
-    update_domain_fields,
-    acquire_domain_refresh,
-    delete_domain_record,
-    get_url_by_id,
-    update_url_by_id,
-    load_refreshing_domains,
-    load_refreshing_urls,
-    try_acquire_polling_lease,
-    get_environment,
-    get_project,
-    sync_domain_tags_from_ids,
-)
+import cdnmanager.db as db
+
 from cdnmanager.providers.cdn import sync_cdn_cname
 from cdnmanager.routes.common import get_session_user, require_login
 from cdnmanager.services.refresh_service import (
@@ -63,19 +46,19 @@ def parse_project_binding(form):
     project_id = (form.get('project_id') or '').strip() or None
     environment_id = (form.get('environment_id') or '').strip() or None
     if environment_id and not project_id:
-        environment = get_environment(environment_id)
+        environment = db.get_environment(environment_id)
         if environment:
             project_id = environment['project_id']
-    if project_id and not get_project(project_id):
+    if project_id and not db.get_project(project_id):
         project_id = None
         environment_id = None
-    if environment_id and not get_environment(environment_id):
+    if environment_id and not db.get_environment(environment_id):
         environment_id = None
     if environment_id:
-        environment = get_environment(environment_id)
+        environment = db.get_environment(environment_id)
         if not environment or environment['project_id'] != project_id:
             environment_id = None
-    projects, environments = sync_domain_tags_from_ids(project_id, environment_id)
+    projects, environments = db.sync_domain_tags_from_ids(project_id, environment_id)
     return project_id, environment_id, projects, environments
 
 
@@ -86,7 +69,7 @@ URL_POLL_FIELDS = ('refresh_status', 'refresh_task_detail', 'completed_at')
 
 
 def poll_domain_tasks_once():
-    snapshot = copy.deepcopy(load_refreshing_domains())
+    snapshot = copy.deepcopy(db.load_refreshing_domains())
     if not snapshot:
         return
     updated = False
@@ -97,18 +80,18 @@ def poll_domain_tasks_once():
         domain_name = polled_record.get('domain')
         if not domain_name:
             continue
-        current = get_domain(domain_name)
+        current = db.get_domain(domain_name)
         if not current or current.get('refresh_status') != REFRESH_STATUS_REFRESHING:
             continue
         if current.get('task_id') != polled_record.get('task_id'):
             continue
         updates = {field: polled_record.get(field) for field in DOMAIN_POLL_FIELDS if polled_record.get(field) is not None}
         if updates:
-            update_domain_fields(domain_name, updates)
+            db.update_domain_fields(domain_name, updates)
 
 
 def poll_url_tasks_once():
-    snapshot = copy.deepcopy(load_refreshing_urls())
+    snapshot = copy.deepcopy(db.load_refreshing_urls())
     if not snapshot:
         return
     updated = False
@@ -119,21 +102,21 @@ def poll_url_tasks_once():
         url_id = polled_record.get('id')
         if not url_id:
             continue
-        current = get_url_by_id(url_id)
+        current = db.get_url_by_id(url_id)
         if not current or current.get('refresh_status') != REFRESH_STATUS_REFRESHING:
             continue
         if current.get('task_id') != polled_record.get('task_id'):
             continue
         updates = {field: polled_record.get(field) for field in URL_POLL_FIELDS if polled_record.get(field) is not None}
         if updates:
-            update_url_by_id(url_id, updates)
+            db.update_url_by_id(url_id, updates)
 
 
 def start_task_polling_thread():
     def worker():
         while True:
             try:
-                if try_acquire_polling_lease():
+                if db.try_acquire_polling_lease():
                     poll_domain_tasks_once()
                     poll_url_tasks_once()
             except Exception:
@@ -165,15 +148,15 @@ def add_domain():
         return jsonify({"error": "Akamai 域名必须填写 CP Code"}), 400
     if provider not in VALID_PROVIDERS:
         return jsonify({"error": "不支持的CDN提供商"}), 400
-    credential = get_credential(provider, credential_id)
+    credential = db.get_credential(provider, credential_id)
     if not credential:
         return jsonify({"error": "请选择有效的凭据"}), 400
 
     # use atomic upsert
-    existing = get_domain(domain)
+    existing = db.get_domain(domain)
     if existing:
         return jsonify({"error": "域名已存在"}), 400
-    upsert_domain({
+    db.upsert_domain({
         "domain": domain,
         "domain_name": domain_name,
         "provider": provider,
@@ -203,7 +186,7 @@ def edit_domain():
     if not can_edit_domain_provider(user.get('role')):
         return jsonify({"error": "无权限修改域名"}), 403
     domain = request.form.get('domain')
-    existing = get_domain(domain)
+    existing = db.get_domain(domain)
     if not existing:
         return jsonify({"error": "域名不存在"}), 404
 
@@ -224,12 +207,12 @@ def edit_domain():
         return jsonify({"error": "Akamai 域名必须填写 CP Code"}), 400
     if provider not in VALID_PROVIDERS:
         return jsonify({"error": "不支持的CDN提供商"}), 400
-    credential = get_credential(provider, credential_id)
+    credential = db.get_credential(provider, credential_id)
     if not credential:
         return jsonify({"error": "请选择有效的凭据"}), 400
 
     provider_changed = existing.get('provider') != provider
-    upsert_domain({
+    db.upsert_domain({
         'domain': domain,
         'domain_name': domain_name,
         'provider': provider,
@@ -271,7 +254,7 @@ def refresh_domain():
     domain = request.form.get('domain')
     if not domain:
         return jsonify({"error": "域名不能为空"}), 400
-    domains = load_domains()
+    domains = db.load_domains()
     target = next((d for d in domains if d['domain'] == domain), None)
     if not target:
         return jsonify({"error": "域名不存在"}), 404
@@ -283,13 +266,13 @@ def refresh_domain():
     credential_id = target.get('credential_id')
     if not credential_id:
         return jsonify({"error": "域名未绑定凭据，请先绑定 provider_credentials 中的凭据"}), 400
-    credential = get_credential(provider, credential_id)
+    credential = db.get_credential(provider, credential_id)
     if not credential:
         return jsonify({"error": "绑定的凭据不存在或已被删除"}), 400
 
     # acquire refresh flag atomically
-    if not acquire_domain_refresh(domain):
-        if not get_domain(domain):
+    if not db.acquire_domain_refresh(domain):
+        if not db.get_domain(domain):
             return jsonify({"error": "域名不存在"}), 404
         return jsonify({"error": "该域名正在刷新中，请稍后"}), 400
 
@@ -298,7 +281,7 @@ def refresh_domain():
         if result.get('error') and not result.get('success'):
             return jsonify({"error": result.get('error', '刷新失败')}), 400
     except Exception as exc:
-        update_domain_fields(domain, {
+        db.update_domain_fields(domain, {
             'refresh_status': REFRESH_STATUS_FAILED,
             'refresh_task_detail': {"error": str(exc)}
         })
@@ -327,6 +310,6 @@ def delete_domain():
     domain = request.form.get('domain')
     
     # delete atomically
-    delete_domain_record(domain)
+    db.delete_domain_record(domain)
 
     return jsonify({"success": True, "message": "域名已删除"})

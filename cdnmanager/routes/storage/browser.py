@@ -3,7 +3,8 @@ from urllib.parse import quote
 from flask import Blueprint, jsonify, request
 
 from cdnmanager.common import can_storage_delete
-from cdnmanager.db import get_storage_credential, get_storage_target
+import cdnmanager.db as db
+
 from cdnmanager.providers.storage.storage_service import build_list_prefix, get_adapter
 from cdnmanager.routes.common import get_session_user, require_login
 
@@ -24,10 +25,10 @@ def _target_context(target_id):
     user, err, status = _require_login()
     if err:
         return None, None, None, err, status
-    target = get_storage_target(target_id)
+    target = db.get_storage_target(target_id)
     if not target:
         return None, None, None, jsonify({'error': '存储目标不存在'}), 404
-    credential = get_storage_credential(target['provider'], target['credential_id'])
+    credential = db.get_storage_credential(target['provider'], target['credential_id'])
     if not credential:
         return None, None, None, jsonify({'error': '存储凭据不存在'}), 400
     config = target.get('target_config') or {}

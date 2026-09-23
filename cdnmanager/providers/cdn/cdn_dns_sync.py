@@ -1,5 +1,6 @@
 from cdnmanager.common import CDN_CNAME_SUFFIXES, KNOWN_CDN_CNAME_SUFFIXES, log
-from cdnmanager.db import get_dns_credential, load_root_domains
+import cdnmanager.db as db
+
 from cdnmanager.providers.dns import list_dns_records, update_dns_record
 
 
@@ -27,7 +28,7 @@ def _build_cname_value(prefix, cdn_provider):
 def _find_root_for_domain(full_domain):
     full_domain = full_domain.lower().strip()
     matches = []
-    for root in load_root_domains():
+    for root in db.load_root_domains():
         root_name = (root.get('domain') or '').lower()
         if not root_name:
             continue
@@ -81,7 +82,7 @@ def sync_cdn_cname(full_domain, cdn_provider):
             'message': f'未找到 {full_domain} 对应的主域名配置，请先在「主域名」中添加',
         }
 
-    credential = get_dns_credential(root['dns_provider'], root['dns_credential_id'])
+    credential = db.get_dns_credential(root['dns_provider'], root['dns_credential_id'])
     if not credential:
         return {'success': False, 'message': '主域名绑定的 DNS 凭据不存在或已删除'}
 

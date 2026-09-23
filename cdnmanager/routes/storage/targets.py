@@ -5,14 +5,8 @@ from datetime import datetime
 from flask import Blueprint, jsonify, request
 
 from cdnmanager.common import STORAGE_PROVIDERS
-from cdnmanager.db import (
-    delete_storage_target,
-    get_storage_credential,
-    get_storage_target,
-    upsert_storage_target,
-    get_environment, 
-    get_project,
-)
+import cdnmanager.db as db
+
 from cdnmanager.routes.common import require_admin
 from cdnmanager.providers.storage.storage_service import ensure_browser_cors, get_adapter
 
@@ -23,14 +17,14 @@ def _parse_binding(project_id, environment_id):
     project_id = (project_id or '').strip() or None
     environment_id = (environment_id or '').strip() or None
     if environment_id and not project_id:
-        environment = get_environment(environment_id)
+        environment = db.get_environment(environment_id)
         if environment:
             project_id = environment['project_id']
-    if project_id and not get_project(project_id):
+    if project_id and not db.get_project(project_id):
         project_id = None
         environment_id = None
     if environment_id:
-        environment = get_environment(environment_id)
+        environment = db.get_environment(environment_id)
         if not environment or environment['project_id'] != project_id:
             environment_id = None
     return project_id, environment_id
@@ -62,12 +56,12 @@ def save_storage_target_route():
     if not project_id or not environment_id:
         return jsonify({'error': '存储目标必须绑定项目和环境'}), 400
 
-    credential = get_storage_credential(provider, credential_id)
+    credential = db.get_storage_credential(provider, credential_id)
     if not credential:
         return jsonify({'error': '存储凭据不存在'}), 400
 
-    existing = get_storage_target(target_id)
-    upsert_storage_target({
+    existing = db.get_storage_target(target_id)
+    db.upsert_storage_target({
         'id': target_id,
         'name': name,
         'provider': provider,
@@ -114,5 +108,5 @@ def delete_storage_target_route():
     target_id = request.form.get('target_id', '').strip()
     if not target_id:
         return jsonify({'error': 'target_id 必填'}), 400
-    delete_storage_target(target_id)
+    db.delete_storage_target(target_id)
     return jsonify({'success': True, 'message': '存储目标已删除'})

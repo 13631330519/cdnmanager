@@ -22,25 +22,8 @@ from cdnmanager.common import (
     UPLOAD_PRESIGN_BATCH_MAX,
 )
 from cdnmanager.routes.common import get_session_user, require_login
-from cdnmanager.db import (
-    cleanup_finished_upload_job,
-    count_upload_files,
-    count_upload_jobs,
-    delete_upload_job_cascade,
-    get_storage_credential,
-    get_storage_target,
-    get_upload_file,
-    get_upload_job,
-    insert_upload_parts,
-    list_failed_upload_files,
-    list_upload_files,
-    list_upload_jobs,
-    list_upload_parts,
-    recalculate_upload_job_stats,
-    update_upload_file,
-    update_upload_job,
-    update_upload_part,
-)
+import cdnmanager.db as db
+
 from cdnmanager.providers.storage.storage_service import (
     ensure_browser_cors,
     get_adapter,
@@ -64,7 +47,7 @@ upload_bp = Blueprint('upload_bp', __name__)
 
 def _maybe_cleanup_job(job_id):
     try:
-        cleanup_finished_upload_job(job_id)
+        db.cleanup_finished_upload_job(job_id)
     except Exception as exc:
         logger.warning('清理上传 Job 失败 %s: %s', job_id, exc)
 
@@ -86,7 +69,7 @@ def _check_job_access(job, user):
 
 
 def _job_context(file_record):
-    job = get_upload_job(file_record['job_id'])
+    job = db.get_upload_job(file_record['job_id'])
     if not job:
         return None, None, None, jsonify({'error': 'Job 不存在'}), 404
     user, err, status = _require_login()
@@ -95,10 +78,10 @@ def _job_context(file_record):
     access_err = _check_job_access(job, user)
     if access_err:
         return None, None, None, access_err, 403
-    target = get_storage_target(job['storage_target_id'])
+    target = db.get_storage_target(job['storage_target_id'])
     if not target:
         return None, None, None, jsonify({'error': '存储目标不存在'}), 404
-    credential = get_storage_credential(target['provider'], target['credential_id'])
+    credential = db.get_storage_credential(target['provider'], target['credential_id'])
     if not credential:
         return None, None, None, jsonify({'error': '存储凭据不存在'}), 400
     config = target.get('target_config') or {}
@@ -110,7 +93,7 @@ def _touch_heartbeat(file_id, extra=None):
     updates = {'last_heartbeat_at': datetime.now().isoformat()}
     if extra:
         updates.update(extra)
-    update_upload_file(file_id, updates)
+    db.update_upload_file(file_id, updates)
 
 
 def _refresh_uploaded_file(target, storage_key):
@@ -127,8 +110,8 @@ def list_upload_jobs_route():
     limit = min(int(request.args.get('limit', 30)), 100)
     offset = int(request.args.get('offset', 0))
     username = None if user.get('role') == 'admin' and request.args.get('all') == '1' else user['username']
-    jobs = list_upload_jobs(username=username, limit=limit, offset=offset)
-    total = count_upload_jobs(username=username)
+    jobs = db.list_upload_jobs(username=username, limit=limit, offset=offset)
+    total = db.count_upload_jobs(username=username)
     return jsonify({'success': True, 'jobs': jobs, 'total': total, 'limit': limit, 'offset': offset})
 
 
@@ -173,7 +156,7 @@ def init_upload_batch(job_id):
     user, err, status = _require_login()
     if err:
         return err, status
-    job = get_upload_job(job_id)
+    job = db.get_upload_job(job_id)
     if not job:
         return jsonify({'error': 'Job 不存在'}), 404
     access_err = _check_job_access(job, user)
@@ -190,7 +173,7 @@ def init_upload_batch(job_id):
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 400
 
-    job = get_upload_job(job_id)
+    job = db.get_upload_job(job_id)
     return jsonify({
         'success': True,
         'job_id': job_id,
@@ -214,10 +197,10 @@ def presign_batch_route():
         return jsonify({'error': f'单次最多 {UPLOAD_PRESIGN_BATCH_MAX} 个'}), 400
 
     for file_id in file_ids:
-        file_record = get_upload_file(file_id)
+        file_record = db.get_upload_file(file_id)
         if not file_record:
             return jsonify({'error': f'文件不存在: {file_id}'}), 404
-        job = get_upload_job(file_record['job_id'])
+        job = db.get_upload_job(file_record['job_id'])
         access_err = _check_job_access(job, user)
         if access_err:
             return access_err
@@ -240,7 +223,7 @@ def upload_job_stream(job_id):
     user, err, status = _require_login()
     if err:
         return err, status
-    job = get_upload_job(job_id)
+    job = db.get_upload_job(job_id)
     if not job:
         return jsonify({'error': 'Job 不存在'}), 404
     access_err = _check_job_access(job, user)
@@ -251,7 +234,7 @@ def upload_job_stream(job_id):
     def generate():
         last_payload = None
         for _ in range(3600):
-            current = get_upload_job(job_id)
+            current = db.get_upload_job(job_id)
             if not current:
                 break
             payload = {
@@ -282,14 +265,14 @@ def export_failures_csv(job_id):
     user, err, status = _require_login()
     if err:
         return err, status
-    job = get_upload_job(job_id)
+    job = db.get_upload_job(job_id)
     if not job:
         return jsonify({'error': 'Job 不存在'}), 404
     access_err = _check_job_access(job, user)
     if access_err:
         return access_err
 
-    failed = list_failed_upload_files(job_id)
+    failed = db.list_failed_upload_files(job_id)
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(['relative_path', 'size', 'error', 'file_id'])
@@ -308,13 +291,13 @@ def refresh_job_cdn(job_id):
     user, err, status = _require_login()
     if err:
         return err, status
-    job = get_upload_job(job_id)
+    job = db.get_upload_job(job_id)
     if not job:
         return jsonify({'error': 'Job 不存在'}), 404
     access_err = _check_job_access(job, user)
     if access_err:
         return access_err
-    target = get_storage_target(job['storage_target_id'])
+    target = db.get_storage_target(job['storage_target_id'])
     if not target:
         return jsonify({'error': '存储目标不存在'}), 404
     result = batch_refresh_cdn(job, target)
@@ -326,7 +309,7 @@ def get_upload_job_route(job_id):
     user, err, status = _require_login()
     if err:
         return err, status
-    job = get_upload_job(job_id)
+    job = db.get_upload_job(job_id)
     if not job:
         return jsonify({'error': 'Job 不存在'}), 404
     access_err = _check_job_access(job, user)
@@ -340,7 +323,7 @@ def list_upload_job_files(job_id):
     user, err, status = _require_login()
     if err:
         return err, status
-    job = get_upload_job(job_id)
+    job = db.get_upload_job(job_id)
     if not job:
         return jsonify({'error': 'Job 不存在'}), 404
     access_err = _check_job_access(job, user)
@@ -350,14 +333,14 @@ def list_upload_job_files(job_id):
     file_status = request.args.get('status')
     limit = min(int(request.args.get('limit', 500)), 1000)
     offset = int(request.args.get('offset', 0))
-    files = list_upload_files(job_id, status=file_status, limit=limit, offset=offset)
-    total = count_upload_files(job_id, status=file_status)
+    files = db.list_upload_files(job_id, status=file_status, limit=limit, offset=offset)
+    total = db.count_upload_files(job_id, status=file_status)
     return jsonify({'success': True, 'files': files, 'total': total, 'limit': limit, 'offset': offset})
 
 
 @upload_bp.route('/api/upload/files/<file_id>/start', methods=['POST'])
 def start_upload_file(file_id):
-    file_record = get_upload_file(file_id)
+    file_record = db.get_upload_file(file_id)
     if not file_record:
         return jsonify({'error': '文件任务不存在'}), 404
     job, target, ctx, err, status = _job_context(file_record)
@@ -369,7 +352,7 @@ def start_upload_file(file_id):
         return jsonify({'error': f"当前状态不可 start: {file_record['status']}"}), 400
 
     now = datetime.now().isoformat()
-    update_upload_job(job['id'], {'status': UPLOAD_JOB_RUNNING})
+    db.update_upload_job(job['id'], {'status': UPLOAD_JOB_RUNNING})
     _touch_heartbeat(file_id, {
         'status': UPLOAD_FILE_UPLOADING,
         'started_at': file_record.get('started_at') or now,
@@ -400,8 +383,8 @@ def start_upload_file(file_id):
                 'etag': None,
                 'status': 'pending',
             })
-        insert_upload_parts(part_rows)
-        update_upload_file(file_id, {'upload_id': upload_id})
+        db.insert_upload_parts(part_rows)
+        db.update_upload_file(file_id, {'upload_id': upload_id})
         return jsonify({
             'success': True,
             'mode': 'multipart',
@@ -423,7 +406,7 @@ def start_upload_file(file_id):
 
 @upload_bp.route('/api/upload/files/<file_id>/presign-parts', methods=['POST'])
 def presign_upload_parts(file_id):
-    file_record = get_upload_file(file_id)
+    file_record = db.get_upload_file(file_id)
     if not file_record:
         return jsonify({'error': '文件任务不存在'}), 404
     _job, _target, ctx, err, status = _job_context(file_record)
@@ -450,7 +433,7 @@ def presign_upload_parts(file_id):
             'etag': None,
             'status': 'pending',
         })
-    insert_upload_parts(part_rows)
+    db.insert_upload_parts(part_rows)
 
     parts = adapter.presign_parts(
         credential, config, file_record['storage_key'], upload_id, start_part, end_part,
@@ -461,7 +444,7 @@ def presign_upload_parts(file_id):
 
 @upload_bp.route('/api/upload/files/<file_id>/part-done', methods=['POST'])
 def upload_part_done(file_id):
-    file_record = get_upload_file(file_id)
+    file_record = db.get_upload_file(file_id)
     if not file_record:
         return jsonify({'error': '文件任务不存在'}), 404
     _job, _target, _ctx, err, status = _job_context(file_record)
@@ -474,8 +457,8 @@ def upload_part_done(file_id):
     if not part_number or not etag:
         return jsonify({'error': 'part_number 与 etag 必填'}), 400
 
-    update_upload_part(file_id, part_number, {'etag': etag, 'status': 'completed'})
-    completed_parts = [p for p in list_upload_parts(file_id) if p.get('status') == 'completed']
+    db.update_upload_part(file_id, part_number, {'etag': etag, 'status': 'completed'})
+    completed_parts = [p for p in db.list_upload_parts(file_id) if p.get('status') == 'completed']
     bytes_uploaded = sum(p.get('size') or 0 for p in completed_parts)
     _touch_heartbeat(file_id, {
         'bytes_uploaded': min(bytes_uploaded, file_record['size']),
@@ -486,7 +469,7 @@ def upload_part_done(file_id):
 
 @upload_bp.route('/api/upload/files/<file_id>/complete', methods=['POST'])
 def complete_upload_file(file_id):
-    file_record = get_upload_file(file_id)
+    file_record = db.get_upload_file(file_id)
     if not file_record:
         return jsonify({'error': '文件任务不存在'}), 404
     job, target, ctx, err, status = _job_context(file_record)
@@ -502,7 +485,7 @@ def complete_upload_file(file_id):
         expected_parts = total_parts_for(file_record['size'])
         local_parts = [
             {'part_number': p['part_number'], 'etag': p['etag']}
-            for p in list_upload_parts(file_id)
+            for p in db.list_upload_parts(file_id)
             if p.get('status') == 'completed' and p.get('etag')
         ]
         parts, verify_err = verify_multipart_parts(
@@ -516,7 +499,7 @@ def complete_upload_file(file_id):
                     )
                     if len(remote_parts) >= expected_parts:
                         for remote_part in remote_parts:
-                            update_upload_part(file_id, remote_part['part_number'], {
+                            db.update_upload_part(file_id, remote_part['part_number'], {
                                 'etag': remote_part['etag'],
                                 'status': 'completed',
                             })
@@ -527,12 +510,12 @@ def complete_upload_file(file_id):
                     logger.warning('从存储拉取分片列表失败: %s', exc)
 
         if verify_err or not parts:
-            update_upload_file(file_id, {
+            db.update_upload_file(file_id, {
                 'status': UPLOAD_FILE_FAILED,
                 'error': verify_err or f'分片未完成: {len(local_parts)}/{expected_parts}',
                 'finished_at': datetime.now().isoformat(),
             })
-            recalculate_upload_job_stats(job['id'])
+            db.recalculate_upload_job_stats(job['id'])
             _maybe_cleanup_job(job['id'])
             return jsonify({'success': False, 'error': verify_err or '分片校验失败'}), 400
         try:
@@ -540,12 +523,12 @@ def complete_upload_file(file_id):
                 credential, config, file_record['storage_key'], file_record['upload_id'], parts,
             ) or etag
         except Exception as exc:
-            update_upload_file(file_id, {
+            db.update_upload_file(file_id, {
                 'status': UPLOAD_FILE_FAILED,
                 'error': str(exc),
                 'finished_at': datetime.now().isoformat(),
             })
-            recalculate_upload_job_stats(job['id'])
+            db.recalculate_upload_job_stats(job['id'])
             _maybe_cleanup_job(job['id'])
             return jsonify({'success': False, 'error': str(exc)}), 400
 
@@ -553,12 +536,12 @@ def complete_upload_file(file_id):
         credential, config, file_record['storage_key'], file_record['size'],
     )
     if not verify.get('ok'):
-        update_upload_file(file_id, {
+        db.update_upload_file(file_id, {
             'status': UPLOAD_FILE_FAILED,
             'error': verify.get('error') or '校验失败',
             'finished_at': datetime.now().isoformat(),
         })
-        recalculate_upload_job_stats(job['id'])
+        db.recalculate_upload_job_stats(job['id'])
         _maybe_cleanup_job(job['id'])
         return jsonify({'success': False, 'error': verify.get('error')}), 400
 
@@ -570,7 +553,7 @@ def complete_upload_file(file_id):
             first = refresh_result['results'][0]
             public_url = first.get('url')
 
-    update_upload_file(file_id, {
+    db.update_upload_file(file_id, {
         'status': UPLOAD_FILE_COMPLETED,
         'bytes_uploaded': file_record['size'],
         'etag': verify.get('etag') or etag,
@@ -578,7 +561,7 @@ def complete_upload_file(file_id):
         'finished_at': datetime.now().isoformat(),
         'last_heartbeat_at': datetime.now().isoformat(),
     })
-    recalculate_upload_job_stats(job['id'])
+    db.recalculate_upload_job_stats(job['id'])
     _maybe_cleanup_job(job['id'])
 
     return jsonify({
@@ -594,7 +577,7 @@ def cleanup_upload_job_route(job_id):
     user, err, status = _require_login()
     if err:
         return err, status
-    job = get_upload_job(job_id)
+    job = db.get_upload_job(job_id)
     if not job:
         return jsonify({'success': True, 'message': 'Job 已不存在'})
     access_err = _check_job_access(job, user)
@@ -602,15 +585,15 @@ def cleanup_upload_job_route(job_id):
         return access_err
     data = request.get_json(silent=True) or {}
     if data.get('force', False):
-        delete_upload_job_cascade(job_id)
+        db.delete_upload_job_cascade(job_id)
         return jsonify({'success': True, 'cleaned': True})
-    cleaned = cleanup_finished_upload_job(job_id)
+    cleaned = db.cleanup_finished_upload_job(job_id)
     return jsonify({'success': True, 'cleaned': cleaned})
 
 
 @upload_bp.route('/api/upload/files/<file_id>/progress', methods=['PATCH'])
 def update_upload_progress(file_id):
-    file_record = get_upload_file(file_id)
+    file_record = db.get_upload_file(file_id)
     if not file_record:
         return jsonify({'error': '文件任务不存在'}), 404
     _job, _target, _ctx, err, status = _job_context(file_record)
@@ -629,7 +612,7 @@ def update_upload_progress(file_id):
 
 @upload_bp.route('/api/upload/files/<file_id>/retry', methods=['POST'])
 def retry_upload_file(file_id):
-    file_record = get_upload_file(file_id)
+    file_record = db.get_upload_file(file_id)
     if not file_record:
         return jsonify({'error': '文件任务不存在'}), 404
     _job, _target, _ctx, err, status = _job_context(file_record)
@@ -638,7 +621,7 @@ def retry_upload_file(file_id):
     if file_record['status'] != UPLOAD_FILE_FAILED:
         return jsonify({'error': '仅 failed 状态可重试'}), 400
 
-    update_upload_file(file_id, {
+    db.update_upload_file(file_id, {
         'status': UPLOAD_FILE_PENDING,
         'bytes_uploaded': 0,
         'upload_id': None,

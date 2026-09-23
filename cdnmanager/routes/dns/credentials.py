@@ -2,7 +2,8 @@ from datetime import datetime
 from flask import Blueprint, jsonify, request
 
 from cdnmanager.common import DNS_PROVIDERS, DNS_CREDENTIAL_FIELD_LABELS
-from cdnmanager.db import delete_dns_credential, get_dns_credential, upsert_dns_credential
+import cdnmanager.db as db
+
 from cdnmanager.routes.common import require_admin
 
 dns_credential_bp = Blueprint('dns_credential_bp', __name__)
@@ -37,8 +38,8 @@ def save_dns_credential_route():
     if error_response:
         return error_response, status
 
-    existing = get_dns_credential(provider, credential_id)
-    upsert_dns_credential(provider, {
+    existing = db.get_dns_credential(provider, credential_id)
+    db.upsert_dns_credential(provider, {
         'id': credential_id,
         'name': credential_name,
         'access_key': values.get('access_key'),
@@ -61,5 +62,5 @@ def delete_dns_credential_route():
     if provider not in DNS_PROVIDERS or not credential_id:
         return jsonify({'error': '参数非法'}), 400
 
-    delete_dns_credential(provider, credential_id)
+    db.delete_dns_credential(provider, credential_id)
     return jsonify({'success': True, 'message': 'DNS 凭据已删除'})

@@ -3,7 +3,8 @@ from datetime import datetime
 from flask import Blueprint, jsonify, request
 
 from cdnmanager.common import STORAGE_CREDENTIAL_FIELD_LABELS, STORAGE_PROVIDERS
-from cdnmanager.db import delete_storage_credential, get_storage_credential, upsert_storage_credential
+import cdnmanager.db as db
+
 from cdnmanager.routes.common import require_admin
 
 storage_credential_bp = Blueprint('storage_credential_bp', __name__)
@@ -38,8 +39,8 @@ def save_storage_credential_route():
     if error_response:
         return error_response, status
 
-    existing = get_storage_credential(provider, credential_id)
-    upsert_storage_credential(provider, {
+    existing = db.get_storage_credential(provider, credential_id)
+    db.upsert_storage_credential(provider, {
         'id': credential_id,
         'name': credential_name,
         'access_key': values.get('access_key'),
@@ -60,5 +61,5 @@ def delete_storage_credential_route():
     credential_id = request.form.get('credential_id', '').strip()
     if provider not in STORAGE_PROVIDERS or not credential_id:
         return jsonify({'error': '参数非法'}), 400
-    delete_storage_credential(provider, credential_id)
+    db.delete_storage_credential(provider, credential_id)
     return jsonify({'success': True, 'message': '存储凭据已删除'})

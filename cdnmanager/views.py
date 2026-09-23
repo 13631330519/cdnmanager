@@ -14,23 +14,8 @@ from cdnmanager.common import (
     USER_ROLE_LABELS,
     VALID_PROVIDERS,
 )
-from cdnmanager.db import (
-    get_visible_domains,
-    load_credentials,
-    load_dns_credentials,
-    load_root_domains,
-    load_storage_credentials,
-    load_storage_targets,
-    load_url_records,
-    load_users,
-    filter_projects_tree,
-    get_environment,
-    get_project,
-    get_user_project_ids,
-    load_projects,
-    load_projects_tree,
-    user_can_access_project,
-)
+import cdnmanager.db as db
+
 
 
 def register_views(app):
@@ -44,12 +29,12 @@ def register_views(app):
     def index():
         if 'username' not in session:
             return redirect(url_for('login'))
-        users = load_users()
+        users = db.load_users()
         user = next((u for u in users if u['username'] == session['username']), None)
-        domains = get_visible_domains(user['username'], user['role'])
-        credentials = load_credentials()
-        dns_credentials = load_dns_credentials()
-        root_domains = load_root_domains() if user['role'] == 'admin' else []
+        domains = db.get_visible_domains(user['username'], user['role'])
+        credentials = db.load_credentials()
+        dns_credentials = db.load_dns_credentials()
+        root_domains = db.load_root_domains() if user['role'] == 'admin' else []
         all_usernames = [u['username'] for u in users]
         credential_lookup = {
             provider: {cred['id']: cred for cred in credentials.get(provider, [])}
@@ -61,41 +46,41 @@ def register_views(app):
         }
         provider_credentials_json = json.dumps(credentials, ensure_ascii=False)
         dns_credentials_json = json.dumps(dns_credentials, ensure_ascii=False)
-        storage_credentials = load_storage_credentials()
-        all_storage_targets = load_storage_targets()
+        storage_credentials = db.load_storage_credentials()
+        all_storage_targets = db.load_storage_targets()
         if user['role'] == 'admin':
             storage_targets = all_storage_targets
         else:
             storage_targets = [
                 target for target in all_storage_targets
                 if not target.get('project_id')
-                or user_can_access_project(
+                or db.user_can_access_project(
                     user['username'],
                     user['role'],
-                    next((p for p in load_projects() if p['id'] == target.get('project_id')), None),
+                    next((p for p in db.load_projects() if p['id'] == target.get('project_id')), None),
                 )
             ]
         storage_credentials_json = json.dumps({
             provider: [{'id': cred['id'], 'name': cred['name']} for cred in items]
             for provider, items in storage_credentials.items()
         }, ensure_ascii=False)
-        refresh_records = [dict(item, _idx=item['id']) for item in load_url_records()]
+        refresh_records = [dict(item, _idx=item['id']) for item in db.load_url_records()]
         refresh_domain_options = sorted({d['domain'] for d in domains})
-        all_projects_tree = load_projects_tree()
-        projects_tree = filter_projects_tree(all_projects_tree, user['username'], user['role'])
+        all_projects_tree = db.load_projects_tree()
+        projects_tree = db.filter_projects_tree(all_projects_tree, user['username'], user['role'])
         default_api_key = current_app.config.get('EXTERNAL_API_SECRET', 'cdn_manager_external_secret')
         projects_json = json.dumps(projects_tree, ensure_ascii=False)
-        all_projects_list = load_projects() if user['role'] == 'admin' else []
+        all_projects_list = db.load_projects() if user['role'] == 'admin' else []
         project_name_map = {project['id']: project['name'] for project in all_projects_list}
         user_project_map = {
-            usr['username']: get_user_project_ids(usr['username'])
+            usr['username']: db.get_user_project_ids(usr['username'])
             for usr in users
         }
         user_project_map_json = json.dumps(user_project_map, ensure_ascii=False)
 
         def _storage_binding_label(target):
-            project = get_project(target.get('project_id')) if target.get('project_id') else None
-            environment = get_environment(target.get('environment_id')) if target.get('environment_id') else None
+            project = db.get_project(target.get('project_id')) if target.get('project_id') else None
+            environment = db.get_environment(target.get('environment_id')) if target.get('environment_id') else None
             if project and environment:
                 return f"{project['name']}/{environment['name']}"
             if project:
@@ -149,7 +134,7 @@ def register_views(app):
         if request.method == 'POST':
             username = request.form['username']
             password = request.form['password']
-            users = load_users()
+            users = db.load_users()
             user = next((u for u in users if u['username'] == username), None)
             if user and check_password_hash(user['password'], password):
                 session.permanent = True

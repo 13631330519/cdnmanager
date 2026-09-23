@@ -17,6 +17,8 @@
 
 from __future__ import annotations
 
+import cdnmanager.db as db
+
 import argparse
 import os
 import secrets
@@ -30,12 +32,8 @@ if ROOT not in sys.path:
 
 from werkzeug.security import generate_password_hash
 
-from cdnmanager.db import ensure_database, get_user, upsert_user
-from cdnmanager.db import (
-    get_project,
-    get_project_by_name,
-    sync_user_project_authorization,
-)
+
+
 
 
 def generate_password() -> str:
@@ -53,7 +51,7 @@ def resolve_project_ids(raw_projects: str) -> tuple[list[str], list[str]]:
         name_or_id = token.strip()
         if not name_or_id:
             continue
-        project = get_project_by_name(name_or_id) or get_project(name_or_id)
+        project = db.get_project_by_name(name_or_id) or db.get_project(name_or_id)
         if not project:
             errors.append(f'项目不存在: {name_or_id}')
             continue
@@ -101,7 +99,7 @@ def process_user(
     if project_errors:
         return 'failed', password or None, '; '.join(project_errors)
 
-    existing = get_user(username)
+    existing = db.get_user(username)
     if existing and not update_existing:
         return 'skipped', password or None, '用户已存在（加 --update 可同步项目）'
 
@@ -120,7 +118,7 @@ def process_user(
         return ('updated' if existing else 'created'), plain_password, None
 
     now = datetime.now().isoformat()
-    upsert_user({
+    db.upsert_user({
         'username': username,
         'password': generate_password_hash(plain_password),
         'role': role if not existing else existing.get('role', role),
@@ -128,7 +126,7 @@ def process_user(
         'updated_at': now,
     })
     if role != 'admin':
-        sync_user_project_authorization(username, project_ids)
+        db.sync_user_project_authorization(username, project_ids)
 
     if existing:
         print(f'[updated] {username} -> 项目 {project_ids or "（无）"}')
@@ -174,7 +172,7 @@ def main() -> int:
         print(f'文件不存在: {input_path}', file=sys.stderr)
         return 1
 
-    ensure_database()
+    db.ensure_database()
 
     raw_lines = load_lines(input_path)
     output_lines: list[str] = []
