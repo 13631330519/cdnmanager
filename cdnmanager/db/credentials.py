@@ -4,6 +4,18 @@ from cdnmanager.common import DNS_PROVIDERS, STORAGE_PROVIDERS, VALID_PROVIDERS
 from cdnmanager.db.connection import query_all, query_one, run_write
 
 
+def get_credential(provider, credential_id):
+    if provider not in VALID_PROVIDERS:
+        return None
+    return query_one(
+        '''
+        SELECT provider, id, name, access_key, secret_key, extra_key, extra_secret, created_at, updated_at
+        FROM provider_credentials WHERE provider = ? AND id = ?
+        ''',
+        (provider, credential_id),
+    )
+
+
 def load_credentials():
     rows = query_all(
         '''

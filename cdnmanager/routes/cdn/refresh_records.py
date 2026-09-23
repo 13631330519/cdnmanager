@@ -1,8 +1,7 @@
 from flask import Blueprint, jsonify, request
 
 from cdnmanager.common import PROVIDER_LABELS
-from cdnmanager.routes.cdn.domains import get_visible_domains
-from cdnmanager.db import load_url_records
+from cdnmanager.db import get_visible_domains, load_url_records
 from cdnmanager.routes.common import get_session_user, require_login
 
 refresh_records_bp = Blueprint('refresh_records_bp', __name__)

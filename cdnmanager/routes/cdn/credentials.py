@@ -2,17 +2,10 @@ from datetime import datetime
 from flask import Blueprint, jsonify, request
 
 from cdnmanager.common import VALID_PROVIDERS, CREDENTIAL_FIELD_LABELS
-from cdnmanager.db import load_credentials, upsert_credential, delete_credential
-from cdnmanager.routes.common import require_admin
+from cdnmanager.db import upsert_credential, delete_credential
+from cdnmanager.routes.common import require_admin,get_credential
 
 credential_bp = Blueprint('credential_bp', __name__)
-
-
-def get_credential(provider, credential_id):
-    if provider not in VALID_PROVIDERS:
-        return None
-    return next((c for c in load_credentials().get(provider, []) if c.get('id') == credential_id), None)
-
 
 def _validate_credential_fields(provider, form):
     fields = CREDENTIAL_FIELD_LABELS.get(provider, [])

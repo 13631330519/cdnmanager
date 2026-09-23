@@ -11,6 +11,7 @@ from cdnmanager.common import (
     REFRESH_STATUS_REFRESHING,
 )
 from cdnmanager.db import (
+    get_credential,
     insert_url_record,
     update_domain_fields,
     load_refreshing_domains,
@@ -29,8 +30,6 @@ from cdnmanager.providers.cdn import(
     check_volcengine_task, refresh_volcengine,
     refresh_x7host
 )
-from cdnmanager.routes.cdn.credentials import get_credential
-
 DOMAIN_POLL_FIELDS = ('refresh_status', 'refresh_task_status', 'refresh_task_detail', 'last_refreshed_at')
 URL_POLL_FIELDS = ('refresh_status', 'refresh_task_detail', 'completed_at')
 

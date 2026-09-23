@@ -1,7 +1,7 @@
 import json
 from datetime import datetime, timedelta
 
-from cdnmanager.common import REFRESH_STATUS_REFRESHING, URL_RECORDS_PER_DOMAIN, infer_domain_from_url
+from cdnmanager.common import REFRESH_STATUS_REFRESHING, URL_RECORDS_PER_DOMAIN, can_manage_all_domains, infer_domain_from_url
 from cdnmanager.db.connection import (
     POLLING_LEASE_SECONDS,
     POLLING_LOCK_NAME,
@@ -10,6 +10,7 @@ from cdnmanager.db.connection import (
     query_one,
     run_write,
 )
+from cdnmanager.db.projects import get_project, user_can_access_project
 
 
 def _url_select_columns():
@@ -24,6 +25,44 @@ def _slice_url_records(rows, limit):
         if row.get('refresh_status') == REFRESH_STATUS_REFRESHING:
             sliced.append(row)
     return sliced
+
+
+def user_can_access_domain(username, role, domain):
+    if can_manage_all_domains(role):
+        return True
+    if domain.get('project_id'):
+        project = get_project(domain['project_id'])
+        if project:
+            return user_can_access_project(username, role, project)
+        return False
+    allowed_users = domain.get('allowed_users')
+    if allowed_users is None:
+        return True
+    if isinstance(allowed_users, list) and ('*' in allowed_users or username in allowed_users):
+        return True
+    if domain.get('added_by') == username:
+        return True
+    return False
+
+
+def get_visible_domains(username, role):
+    visible = []
+    for domain in load_domains():
+        if not can_manage_all_domains(role) and not user_can_access_domain(username, role, domain):
+            continue
+        visible.append(domain)
+    return visible
+
+
+def find_bound_domain(host):
+    host = (host or '').lower().strip()
+    if not host:
+        return None
+    domains = load_domains()
+    candidates = [d for d in domains if d.get('domain') and (host == d['domain'].lower() or host.endswith('.' + d['domain'].lower()))]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda d: len(d['domain']))
 
 
 def load_domains():
@@ -138,6 +177,15 @@ def update_domain_fields(domain_name, updates):
 
     run_write(work)
     return True
+
+
+def get_visible_domains(username, role):
+    visible = []
+    for domain in load_domains():
+        if not can_manage_all_domains(role) and not user_can_access_domain(username, role, domain):
+            continue
+        visible.append(domain)
+    return visible
 
 
 def acquire_domain_refresh(domain_name):

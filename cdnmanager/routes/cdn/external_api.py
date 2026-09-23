@@ -11,18 +11,18 @@ from cdnmanager.common import (
     UPLOAD_PRESIGN_BATCH_MAX,
     REFRESH_STATUS_NONE,
 )
-from cdnmanager.routes.cdn.credentials import get_credential
-from cdnmanager.routes.cdn.domains import find_bound_domain
-from cdnmanager.routes.projects import resolve_storage_target_for_domain
 from cdnmanager.db import (
+    find_bound_domain,
+    get_credential,
     get_upload_file,
     get_upload_job,
     list_upload_parts,
     recalculate_upload_job_stats,
     update_upload_file,
     get_domain,
-    get_url_by_id, 
+    get_url_by_id,
     load_urls,
+    resolve_storage_target_for_domain,
 )
 from cdnmanager.providers.storage.storage_service import uses_multipart
 from cdnmanager.services.storage_refresh_service import refresh_file_for_target

@@ -15,6 +15,7 @@ from cdnmanager.common import (
     VALID_PROVIDERS,
 )
 from cdnmanager.db import (
+    get_visible_domains,
     load_credentials,
     load_dns_credentials,
     load_root_domains,
@@ -30,7 +31,6 @@ from cdnmanager.db import (
     load_projects_tree,
     user_can_access_project,
 )
-from cdnmanager.routes.cdn.domains import get_visible_domains
 
 
 def register_views(app):

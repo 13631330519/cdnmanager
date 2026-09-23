@@ -4,11 +4,12 @@ import time
 from datetime import datetime
 from flask import Blueprint, jsonify, request, session
 from cdnmanager.common import VALID_PROVIDERS, REFRESH_STATUS_NONE, REFRESH_STATUS_REFRESHING, REFRESH_STATUS_FAILED, CDN_CNAME_SUFFIXES, can_edit_domain_provider, can_manage_all_domains, log
-from cdnmanager.routes.cdn.credentials import get_credential
-from cdnmanager.routes.common import get_session_user, require_login
 from cdnmanager.db import (
-    load_domains,
+    find_bound_domain,
+    get_credential,
     get_domain,
+    get_visible_domains,
+    load_domains,
     upsert_domain,
     update_domain_fields,
     acquire_domain_refresh,
@@ -18,12 +19,12 @@ from cdnmanager.db import (
     load_refreshing_domains,
     load_refreshing_urls,
     try_acquire_polling_lease,
-    get_environment, 
-    get_project, 
-    sync_domain_tags_from_ids, 
-    user_can_access_project,
+    get_environment,
+    get_project,
+    sync_domain_tags_from_ids,
 )
 from cdnmanager.providers.cdn import sync_cdn_cname
+from cdnmanager.routes.common import get_session_user, require_login
 from cdnmanager.services.refresh_service import (
     poll_domain_record,
     poll_url_record,
@@ -32,32 +33,6 @@ from cdnmanager.services.refresh_service import (
 )
 
 domain_bp = Blueprint('domain_bp', __name__)
-
-def user_can_access_domain(username, role, domain):
-    if can_manage_all_domains(role):
-        return True
-    if domain.get('project_id'):
-        project = get_project(domain['project_id'])
-        if project:
-            return user_can_access_project(username, role, project)
-        return False
-    allowed_users = domain.get('allowed_users')
-    if allowed_users is None:
-        return True
-    if isinstance(allowed_users, list) and ('*' in allowed_users or username in allowed_users):
-        return True
-    if domain.get('added_by') == username:
-        return True
-    return False
-
-
-def get_visible_domains(username, role):
-    visible = []
-    for domain in load_domains():
-        if not can_manage_all_domains(role) and not user_can_access_domain(username, role, domain):
-            continue
-        visible.append(domain)
-    return visible
 
 
 def parse_allowed_users(raw_value):
@@ -167,15 +142,6 @@ def start_task_polling_thread():
 
     thread = threading.Thread(target=worker, daemon=True)
     thread.start()
-
-
-def find_bound_domain(host):
-    host = host.lower().strip()
-    domains = load_domains()
-    candidates = [d for d in domains if d.get('domain') and (host == d['domain'].lower() or host.endswith('.' + d['domain'].lower()))]
-    if not candidates:
-        return None
-    return max(candidates, key=lambda d: len(d['domain']))
 
 
 @domain_bp.route('/add_domain', methods=['POST'])

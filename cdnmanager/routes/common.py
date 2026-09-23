@@ -1,7 +1,7 @@
 from flask import jsonify
 
-from cdnmanager.db import get_user
-
+from cdnmanager.db import get_credential, get_user, load_credentials
+from cdnmanager.common import VALID_PROVIDERS
 
 def get_session_user():
     from flask import session
@@ -54,3 +54,5 @@ def require_role(*allowed_roles):
     if not user or user.get('role') not in allowed_roles:
         return jsonify({'error': '无权限'}), 403
     return None
+
+

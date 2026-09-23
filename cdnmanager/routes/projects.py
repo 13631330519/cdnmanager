@@ -14,11 +14,12 @@ from cdnmanager.db import (
     get_project_by_name,
     list_storage_targets_for_environment,
     load_projects_tree,
+    resolve_storage_target_for_domain,
     sync_domain_tags_from_ids,
     upsert_environment,
     upsert_project,
     get_storage_target,
-    load_domains, 
+    load_domains,
     update_domain_fields,
 )
 
@@ -32,24 +33,6 @@ def _require_admin():
     if denied:
         return None, denied[0], denied[1]
     return get_session_user(), None, None
-
-
-def resolve_storage_target_for_domain(domain_record, storage_target_id=None):
-    environment_id = domain_record.get('environment_id')
-    if not environment_id:
-        return None, '域名未绑定项目环境，无法确定上传目标'
-
-    targets = list_storage_targets_for_environment(environment_id)
-    if not targets:
-        return None, '该环境未配置存储目标，请在存储目标管理中绑定'
-
-    if storage_target_id:
-        target = next((item for item in targets if item['id'] == storage_target_id), None)
-        if not target:
-            return None, '存储目标不属于该环境'
-        return target, None
-
-    return targets[0], None
 
 
 @project_bp.route('/api/projects', methods=['GET'])

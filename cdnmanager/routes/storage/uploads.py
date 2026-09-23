@@ -21,8 +21,7 @@ from cdnmanager.common import (
     UPLOAD_PART_SIZE,
     UPLOAD_PRESIGN_BATCH_MAX,
 )
-from cdnmanager.routes.cdn.credentials import get_credential
-from cdnmanager.routes.common import get_session_user, require_login
+from cdnmanager.routes.common import get_session_user, require_login,get_credential
 from cdnmanager.db import (
     cleanup_finished_upload_job,
     count_upload_files,

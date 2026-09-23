@@ -11,6 +11,7 @@ from cdnmanager.db.credentials import (
     delete_root_domain,
     delete_storage_credential,
     delete_storage_target,
+    get_credential,
     get_dns_credential,
     get_root_domain,
     get_storage_credential,
@@ -29,8 +30,10 @@ from cdnmanager.db.credentials import (
 from cdnmanager.db.domains import (
     acquire_domain_refresh,
     delete_domain_record,
+    find_bound_domain,
     get_domain,
     get_url_by_id,
+    get_visible_domains,
     insert_url,
     insert_url_record,
     load_domains,
@@ -43,6 +46,7 @@ from cdnmanager.db.domains import (
     update_domain_fields,
     update_url_by_id,
     upsert_domain,
+    user_can_access_domain,
 )
 from cdnmanager.db.models import ensure_database
 from cdnmanager.db.projects import (
@@ -106,9 +110,10 @@ __all__ = [
     'load_storage_targets', 'get_storage_target', 'upsert_storage_target', 'delete_storage_target',
     'load_domains', 'get_domain', 'upsert_domain', 'delete_domain_record', 'update_domain_fields',
     'acquire_domain_refresh', 'insert_url_record', 'insert_url', 'update_url_by_id', 'get_url_by_id',
+    'find_bound_domain', 'get_visible_domains', 'user_can_access_domain',
     'load_url_records', 'load_urls', 'prune_urls_for_domain', 'load_refreshing_domains',
     'load_refreshing_urls', 'try_acquire_polling_lease',
-    'generate_api_key', '_normalize_allowed_users', 'user_can_access_project',
+    'generate_api_key', '_normalize_allowed_users', 'user_can_access_project', 'resolve_storage_target_for_domain',
     'load_projects', 'get_project', 'get_project_by_name', 'upsert_project', 'delete_project',
     'load_environments', 'get_environment', 'get_environment_by_name', 'upsert_environment', 'delete_environment',
     'list_storage_targets_for_environment', 'load_projects_tree', 'filter_projects_tree', 'get_user_project_ids',

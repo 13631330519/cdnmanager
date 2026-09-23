@@ -38,6 +38,24 @@ def user_can_access_project(username, role, project):
     return username in allowed_users
 
 
+def resolve_storage_target_for_domain(domain_record, storage_target_id=None):
+    environment_id = domain_record.get('environment_id')
+    if not environment_id:
+        return None, '域名未绑定项目环境，无法确定上传目标'
+
+    targets = list_storage_targets_for_environment(environment_id)
+    if not targets:
+        return None, '该环境未配置存储目标，请在存储目标管理中绑定'
+
+    if storage_target_id:
+        target = next((item for item in targets if item['id'] == storage_target_id), None)
+        if not target:
+            return None, '存储目标不属于该环境'
+        return target, None
+
+    return targets[0], None
+
+
 def load_projects():
     return query_all(
         '''
