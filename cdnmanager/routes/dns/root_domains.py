@@ -5,7 +5,7 @@ from cdnmanager.common import DNS_PROVIDERS, log
 import cdnmanager.db as db
 
 from cdnmanager.routes.common import require_admin
-from cdnmanager.providers.dns import list_dns_records, update_dns_record, create_dns_record, delete_dns_record
+import cdnmanager.providers.dns as dns_providers
 
 root_domain_bp = Blueprint('root_domain_bp', __name__)
 
@@ -116,7 +116,7 @@ def internal_list_dns_records():
     if error_response:
         return error_response, status
 
-    result = list_dns_records(
+    result = dns_providers.list_dns_records(
         root_domain,
         context['root']['dns_provider'],
         context['credential'],
@@ -149,7 +149,7 @@ def internal_update_dns_record():
     if error_response:
         return error_response, status
 
-    result = update_dns_record(
+    result = dns_providers.update_dns_record(
         root_domain,
         context['root']['dns_provider'],
         context['credential'],
@@ -191,7 +191,7 @@ def internal_create_dns_record():
     if error_response:
         return error_response, status
 
-    result = create_dns_record(
+    result = dns_providers.create_dns_record(
         root_domain,
         context['root']['dns_provider'],
         context['credential'],
@@ -227,7 +227,7 @@ def internal_delete_dns_record():
     if error_response:
         return error_response, status
 
-    result = delete_dns_record(
+    result = dns_providers.delete_dns_record(
         root_domain,
         context['root']['dns_provider'],
         context['credential'],
