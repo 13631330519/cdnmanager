@@ -1,6 +1,3 @@
-import copy
-import threading
-import time
 from datetime import datetime
 from flask import Blueprint, jsonify, request, session
 from cdnmanager.common import VALID_PROVIDERS, REFRESH_STATUS_NONE, REFRESH_STATUS_REFRESHING, REFRESH_STATUS_FAILED, CDN_CNAME_SUFFIXES, can_edit_domain_provider, can_manage_all_domains, log
@@ -11,21 +8,6 @@ from cdnmanager.routes.common import get_session_user, require_login
 import cdnmanager.services.refresh_service as refresh_service
 
 domain_bp = Blueprint('domain_bp', __name__)
-
-
-def parse_allowed_users(raw_value):
-    if not raw_value:
-        return ['*']
-    allowed_users = [u.strip() for u in raw_value.split(',') if u.strip()]
-    return ['*'] if not allowed_users else sorted(set(allowed_users))
-
-
-def parse_group_tags(raw_value):
-    if not raw_value:
-        return []
-    tags = [tag.strip() for tag in raw_value.split(',') if tag.strip()]
-    return sorted(set(tags))
-
 
 def _get_session_user_or_error():
     login_error = require_login()
@@ -56,67 +38,6 @@ def parse_project_binding(form):
     projects, environments = db.sync_domain_tags_from_ids(project_id, environment_id)
     return project_id, environment_id, projects, environments
 
-DOMAIN_POLL_FIELDS = ('refresh_status', 'refresh_task_status', 'refresh_task_detail', 'last_refreshed_at')
-URL_POLL_FIELDS = ('refresh_status', 'refresh_task_detail', 'completed_at')
-
-
-def poll_domain_tasks_once():
-    snapshot = copy.deepcopy(db.load_refreshing_domains())
-    if not snapshot:
-        return
-    updated = False
-    for polled_record in snapshot:
-        if not refresh_service.poll_domain_record(polled_record):
-            continue
-        updated = True
-        domain_name = polled_record.get('domain')
-        if not domain_name:
-            continue
-        current = db.get_domain(domain_name)
-        if not current or current.get('refresh_status') != REFRESH_STATUS_REFRESHING:
-            continue
-        if current.get('task_id') != polled_record.get('task_id'):
-            continue
-        updates = {field: polled_record.get(field) for field in DOMAIN_POLL_FIELDS if polled_record.get(field) is not None}
-        if updates:
-            db.update_domain_fields(domain_name, updates)
-
-
-def poll_url_tasks_once():
-    snapshot = copy.deepcopy(db.load_refreshing_urls())
-    if not snapshot:
-        return
-    updated = False
-    for polled_record in snapshot:
-        if not refresh_service.poll_url_record(polled_record):
-            continue
-        updated = True
-        url_id = polled_record.get('id')
-        if not url_id:
-            continue
-        current = db.get_url_by_id(url_id)
-        if not current or current.get('refresh_status') != REFRESH_STATUS_REFRESHING:
-            continue
-        if current.get('task_id') != polled_record.get('task_id'):
-            continue
-        updates = {field: polled_record.get(field) for field in URL_POLL_FIELDS if polled_record.get(field) is not None}
-        if updates:
-            db.update_url_by_id(url_id, updates)
-
-
-def start_task_polling_thread():
-    def worker():
-        while True:
-            try:
-                if db.try_acquire_polling_lease():
-                    poll_domain_tasks_once()
-                    poll_url_tasks_once()
-            except Exception:
-                pass
-            time.sleep(30)
-
-    thread = threading.Thread(target=worker, daemon=True)
-    thread.start()
 
 
 @domain_bp.route('/add_domain', methods=['POST'])

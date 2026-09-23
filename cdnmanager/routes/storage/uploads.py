@@ -2,7 +2,6 @@ import csv
 import io
 import json
 import time
-import uuid
 from datetime import datetime
 
 import logging
@@ -475,7 +474,7 @@ def complete_upload_file(file_id):
             for p in db.list_upload_parts(file_id)
             if p.get('status') == 'completed' and p.get('etag')
         ]
-        parts, verify_err = verify_multipart_parts(
+        parts, verify_err = upload_service.verify_multipart_parts(
             adapter, credential, config, file_record, local_parts,
         )
         if verify_err:
@@ -490,7 +489,7 @@ def complete_upload_file(file_id):
                                 'etag': remote_part['etag'],
                                 'status': 'completed',
                             })
-                        parts, verify_err = verify_multipart_parts(
+                        parts, verify_err = upload_service.verify_multipart_parts(
                             adapter, credential, config, file_record, remote_parts,
                         )
                 except Exception as exc:

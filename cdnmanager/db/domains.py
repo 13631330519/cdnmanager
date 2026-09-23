@@ -179,15 +179,6 @@ def update_domain_fields(domain_name, updates):
     return True
 
 
-def get_visible_domains(username, role):
-    visible = []
-    for domain in load_domains():
-        if not can_manage_all_domains(role) and not user_can_access_domain(username, role, domain):
-            continue
-        visible.append(domain)
-    return visible
-
-
 def acquire_domain_refresh(domain_name):
     def work(conn):
         row = conn.execute(
