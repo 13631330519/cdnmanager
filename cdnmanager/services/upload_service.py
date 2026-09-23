@@ -16,8 +16,7 @@ from cdnmanager.common import (
 )
 import cdnmanager.db as db
 import cdnmanager.providers.storage.storage_service as storage_service
-
-from cdnmanager.services.storage_refresh_service import refresh_file_for_target
+import cdnmanager.services.storage_refresh_service as storage_refresh_service
 
 
 def build_file_rows(target, job_id, remote_prefix, files):

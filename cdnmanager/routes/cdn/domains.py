@@ -8,12 +8,7 @@ import cdnmanager.db as db
 import cdnmanager.providers.cdn as cdn_providers
 
 from cdnmanager.routes.common import get_session_user, require_login
-from cdnmanager.services.refresh_service import (
-    poll_domain_record,
-    poll_url_record,
-    record_domain_refresh,
-    refresh_and_record,
-)
+import cdnmanager.services.refresh_service as refresh_service
 
 domain_bp = Blueprint('domain_bp', __name__)
 
@@ -62,7 +57,7 @@ def parse_project_binding(form):
     return project_id, environment_id, projects, environments
 
 
-record_refresh_submission = record_domain_refresh
+record_refresh_submission = refresh_service.record_domain_refresh
 
 DOMAIN_POLL_FIELDS = ('refresh_status', 'refresh_task_status', 'refresh_task_detail', 'last_refreshed_at')
 URL_POLL_FIELDS = ('refresh_status', 'refresh_task_detail', 'completed_at')
@@ -74,7 +69,7 @@ def poll_domain_tasks_once():
         return
     updated = False
     for polled_record in snapshot:
-        if not poll_domain_record(polled_record):
+        if not refresh_service.poll_domain_record(polled_record):
             continue
         updated = True
         domain_name = polled_record.get('domain')
@@ -96,7 +91,7 @@ def poll_url_tasks_once():
         return
     updated = False
     for polled_record in snapshot:
-        if not poll_url_record(polled_record):
+        if not refresh_service.poll_url_record(polled_record):
             continue
         updated = True
         url_id = polled_record.get('id')

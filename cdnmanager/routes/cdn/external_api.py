@@ -14,17 +14,10 @@ from cdnmanager.common import (
 import cdnmanager.db as db
 import cdnmanager.providers.storage.storage_service as storage_service
 
-from cdnmanager.services.storage_refresh_service import refresh_file_for_target
-from cdnmanager.services.api_auth_service import (
-    verify_domain_job_signature,
-    verify_domain_signature,
-)
-from cdnmanager.services.refresh_service import record_url_refresh, submit_refresh
-from cdnmanager.services.upload_service import (
-    create_upload_job_shell,
-    presign_put_batch,
-    verify_multipart_parts,
-)
+import cdnmanager.services.storage_refresh_service as storage_refresh_service
+import cdnmanager.services.api_auth_service as api_auth_service
+import cdnmanager.services.refresh_service as refresh_service
+import cdnmanager.services.upload_service as upload_service
 
 external_bp = Blueprint('external_bp', __name__)
 
@@ -37,7 +30,7 @@ def _verify_job_request(domain_record, job_id, data):
     signature = data.get('signature')
     if not data.get('timestamp') or not signature:
         return False, 'timestamp/signature 均为必填字段'
-    return verify_domain_job_signature(domain_record, job_id, data.get('timestamp'), signature)
+    return api_auth_service.verify_domain_job_signature(domain_record, job_id, data.get('timestamp'), signature)
 
 
 @external_bp.route('/api/task_status', methods=['GET'])
@@ -123,7 +116,7 @@ def api_refresh_url():
     if not credential:
         return jsonify({"success": False, "error": "域名绑定的凭据不存在或已删除"}), 400
 
-    result = submit_refresh(
+    result = refresh_service.submit_refresh(
         provider,
         domain_record['domain'],
         credential,
@@ -133,7 +126,7 @@ def api_refresh_url():
     if result.get('error') and not result.get('success'):
         return jsonify({"success": False, "error": result.get('error', '刷新失败')}), 400
 
-    record_url_refresh(domain_record['domain'], provider, credential_id, result, url)
+    refresh_service.record_url_refresh(domain_record['domain'], provider, credential_id, result, url)
     return jsonify(result)
 
 
@@ -175,14 +168,14 @@ def api_upload_init():
 
     api_user = {'username': _api_user(domain_record['domain'])}
     try:
-        job_id, rows, _ = create_upload_job_shell(
+        job_id, rows, _ = upload_service.create_upload_job_shell(
             api_user, target['id'], remote_prefix, refresh_after, first_batch=files,
         )
     except ValueError as exc:
         return jsonify({'success': False, 'error': str(exc)}), 400
 
     presign_ids = [row['id'] for row in rows if not storage_service.uses_multipart(row['size'])]
-    presigned, presign_errors = presign_put_batch(presign_ids[:UPLOAD_PRESIGN_BATCH_MAX]) if presign_ids else ([], [])
+    presigned, presign_errors = upload_service.presign_put_batch(presign_ids[:UPLOAD_PRESIGN_BATCH_MAX]) if presign_ids else ([], [])
 
     return jsonify({
         'success': True,
@@ -235,7 +228,7 @@ def api_upload_presign():
         if not file_record or file_record['job_id'] != job_id:
             return jsonify({'success': False, 'error': f'文件不存在: {file_id}'}), 404
 
-    results, errors = presign_put_batch(file_ids)
+    results, errors = upload_service.presign_put_batch(file_ids)
     return jsonify({'success': True, 'files': results, 'errors': errors})
 
 
@@ -270,7 +263,7 @@ def api_upload_complete():
         return jsonify({'success': False, 'error': 'Job 无权限'}), 403
 
     from cdnmanager.routes.storage.uploads import _maybe_cleanup_job
-    from cdnmanager.services.upload_service import _job_storage_ctx
+    _job_storage_ctx = upload_service._job_storage_ctx
 
     try:
         target, credential, config, adapter = _job_storage_ctx(job)
@@ -286,7 +279,7 @@ def api_upload_complete():
             for part in db.list_upload_parts(file_id)
             if part.get('status') == 'completed' and part.get('etag')
         ]
-        parts, verify_err = verify_multipart_parts(
+        parts, verify_err = upload_service.verify_multipart_parts(
             adapter, credential, config, file_record, local_parts,
         )
         if verify_err or not parts:

@@ -24,15 +24,8 @@ from cdnmanager.common import (
 from cdnmanager.routes.common import get_session_user, require_login
 import cdnmanager.db as db
 import cdnmanager.providers.storage.storage_service as storage_service
-
-from cdnmanager.services.storage_refresh_service import refresh_file_for_target
-from cdnmanager.services.upload_service import (
-    append_manifest_batch,
-    batch_refresh_cdn,
-    create_upload_job_shell,
-    presign_put_batch,
-    verify_multipart_parts,
-)
+import cdnmanager.services.storage_refresh_service as storage_refresh_service
+import cdnmanager.services.upload_service as upload_service
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +86,7 @@ def _touch_heartbeat(file_id, extra=None):
 def _refresh_uploaded_file(target, storage_key):
     if not target or not storage_key:
         return None
-    return refresh_file_for_target(target, storage_key)
+    return storage_refresh_service.refresh_file_for_target(target, storage_key)
 
 
 @upload_bp.route('/api/upload/jobs', methods=['GET'])
@@ -130,7 +123,7 @@ def create_upload_job():
         return jsonify({'error': f'Job 最多 {UPLOAD_JOB_MAX_FILES} 个文件'}), 400
 
     try:
-        job_id, rows, _target = create_upload_job_shell(
+        job_id, rows, _target = upload_service.create_upload_job_shell(
             user, storage_target_id, remote_prefix, refresh_after, first_batch=files,
         )
     except ValueError as exc:
@@ -163,7 +156,7 @@ def init_upload_batch(job_id):
         return jsonify({'error': 'files 不能为空'}), 400
 
     try:
-        rows = append_manifest_batch(job_id, files)
+        rows = upload_service.append_manifest_batch(job_id, files)
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 400
 
@@ -201,7 +194,7 @@ def presign_batch_route():
 
     origin = request.headers.get('Origin')
     started = time.perf_counter()
-    results, errors = presign_put_batch(file_ids, origin=origin)
+    results, errors = upload_service.presign_put_batch(file_ids, origin=origin)
     elapsed_ms = round((time.perf_counter() - started) * 1000, 2)
 
     return jsonify({
@@ -294,7 +287,7 @@ def refresh_job_cdn(job_id):
     target = db.get_storage_target(job['storage_target_id'])
     if not target:
         return jsonify({'error': '存储目标不存在'}), 404
-    result = batch_refresh_cdn(job, target)
+    result = upload_service.batch_refresh_cdn(job, target)
     return jsonify({'success': True, **result})
 
 

@@ -1,8 +1,7 @@
 """Resolve CDN domains from storage target project/env and refresh uploaded files."""
 
 import cdnmanager.db as db
-
-from cdnmanager.services.refresh_service import refresh_and_record
+import cdnmanager.services.refresh_service as refresh_service
 
 
 def build_cdn_file_url(domain_name, storage_key):
@@ -61,7 +60,7 @@ def refresh_file_for_target(target, storage_key):
             continue
 
         for url in urls:
-            result = refresh_and_record(domain_record, credential, url=url, record_url=True)
+            result = refresh_service.refresh_and_record(domain_record, credential, url=url, record_url=True)
             entry = {
                 'domain': domain_record['domain'],
                 'url': url,

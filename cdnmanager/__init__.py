@@ -45,12 +45,12 @@ def create_app():
         return {'asset_version': max(versions) if versions else 1}
 
     if ENABLE_TASK_POLLING:
-        from cdnmanager.services.refresh_service import start_task_polling_thread
-        start_task_polling_thread()
+        import cdnmanager.services.refresh_service as refresh_service
+        refresh_service.start_task_polling_thread()
 
     from cdnmanager.config import ENABLE_UPLOAD_TIMEOUT_SCAN
     if ENABLE_UPLOAD_TIMEOUT_SCAN:
-        from cdnmanager.services.upload_workers import start_upload_timeout_thread
-        start_upload_timeout_thread()
+        import cdnmanager.services.upload_workers as upload_workers
+        upload_workers.start_upload_timeout_thread()
 
     return app
