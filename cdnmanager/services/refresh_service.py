@@ -3,15 +3,15 @@
 import copy
 import threading
 import time
-from datetime import datetime
+import cdnmanager.db as db
+import cdnmanager.providers.cdn as cdn_providers
 
+from datetime import datetime
 from cdnmanager.common import (
     REFRESH_STATUS_COMPLETE,
     REFRESH_STATUS_FAILED,
     REFRESH_STATUS_REFRESHING,
 )
-import cdnmanager.db as db
-import cdnmanager.providers.cdn as cdn_providers
 
 DOMAIN_POLL_FIELDS = ('refresh_status', 'refresh_task_status', 'refresh_task_detail', 'last_refreshed_at')
 URL_POLL_FIELDS = ('refresh_status', 'refresh_task_detail', 'completed_at')

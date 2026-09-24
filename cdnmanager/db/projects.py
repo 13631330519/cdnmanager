@@ -1,17 +1,14 @@
 """Project / environment persistence and access control."""
-
 import json
 import secrets
-import uuid
-from datetime import datetime
 
+from datetime import datetime
 from cdnmanager.common import can_manage_all_domains
 from cdnmanager.db.connection import query_all, query_one, run_write
 
 
 def generate_api_key():
     return secrets.token_hex(32)
-
 
 def _normalize_allowed_users(raw):
     if raw is None:
@@ -24,7 +21,6 @@ def _normalize_allowed_users(raw):
         return sorted(set(u.strip() for u in raw.split(',') if u.strip()))
     return []
 
-
 def user_can_access_project(username, role, project):
     if can_manage_all_domains(role):
         return True
@@ -36,7 +32,6 @@ def user_can_access_project(username, role, project):
     if '*' in allowed_users:
         return True
     return username in allowed_users
-
 
 def resolve_storage_target_for_domain(domain_record, storage_target_id=None):
     environment_id = domain_record.get('environment_id')

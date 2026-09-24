@@ -11,20 +11,14 @@ from cdnmanager.routes.common import get_session_user, require_login
 storage_browser_bp = Blueprint('storage_browser_bp', __name__)
 
 
-def _require_login():
+def _target_context(target_id):
     login_error = require_login()
     if login_error is not None:
-        return None, login_error[0], login_error[1]
+        return None, None,None, login_error[0], login_error[1]
     user = get_session_user()
     if not user:
-        return None, jsonify({'error': '用户不存在'}), 404
-    return user, None, None
+        return None, None,None, jsonify({'error': '用户不存在'}), 404
 
-
-def _target_context(target_id):
-    user, err, status = _require_login()
-    if err:
-        return None, None, None, err, status
     target = db.get_storage_target(target_id)
     if not target:
         return None, None, None, jsonify({'error': '存储目标不存在'}), 404

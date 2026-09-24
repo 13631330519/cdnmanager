@@ -2,11 +2,10 @@
 
 import hmac
 import hashlib
-from datetime import datetime
-
-from flask import current_app
-
 import cdnmanager.db as db
+
+from datetime import datetime
+from flask import current_app
 
 
 
@@ -77,25 +76,7 @@ def verify_domain_signature(domain_record, message, timestamp, signature):
     return False, '验签失败'
 
 
-def verify_message_signature(message, timestamp, signature, secret):
-    ok, timestamp_or_error = validate_timestamp(timestamp)
-    if not ok:
-        return False, timestamp_or_error
-    if _sign(secret, message) == signature:
-        return True, None
-    return False, '验签失败'
-
-
 def verify_domain_job_signature(domain_record, job_id, timestamp, signature):
-    ok, timestamp_or_error = validate_timestamp(timestamp)
-    if not ok:
-        return False, timestamp_or_error
+    message = f"{domain_record['domain']}{job_id}{timestamp}"
+    return verify_domain_signature(domain_record,message,timestamp,signature)
 
-    message = f"{domain_record['domain']}{job_id}{timestamp_or_error}"
-    ctx = resolve_domain_auth_context(domain_record)
-    default_secret = default_api_secret()
-
-    if ctx['has_custom_key'] and _sign(default_secret, message) == signature:
-        return False, '该项目/环境已配置独立 API Key，不可使用公共默认 Key'
-
-    return verify_message_signature(message, timestamp_or_error, signature, ctx['effective_secret'])

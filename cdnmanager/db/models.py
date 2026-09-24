@@ -1,15 +1,7 @@
-from contextlib import contextmanager
-from datetime import datetime, timedelta
+from datetime import datetime
 from werkzeug.security import generate_password_hash
-
-from cdnmanager.db.users import (
-    load_users,
-    upsert_user,
-)
-from cdnmanager.db.connection import (
-    ensure_data_dir,
-    run_write,
-)
+from cdnmanager.db.users import load_users,upsert_user
+from cdnmanager.db.connection import ensure_data_dir,run_write
 
 def ensure_database():
     ensure_data_dir()

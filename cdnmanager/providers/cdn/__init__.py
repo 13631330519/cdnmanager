@@ -4,7 +4,6 @@ This package intentionally exposes only the interfaces currently used by other
 modules. Internal helpers and connection primitives stay in their dedicated
 modules and are not exported here.
 """
-from cdnmanager.providers.cdn.cdn_dns_sync import sync_cdn_cname
 from cdnmanager.providers.cdn.akamai import check_akamai_refresh, refresh_akamai
 from cdnmanager.providers.cdn.alicdn import check_alicdn_task, refresh_alicdn
 from cdnmanager.providers.cdn.ctyun import check_ctyun_task, refresh_ctyun
@@ -14,7 +13,6 @@ from cdnmanager.providers.cdn.volcengine import check_volcengine_task, refresh_v
 from cdnmanager.providers.cdn.x7host import refresh_x7host
 
 __all__ = [
-    'sync_cdn_cname',
     'check_akamai_refresh', 'refresh_akamai',
     'check_alicdn_task', 'refresh_alicdn',
     'check_ctyun_task', 'refresh_ctyun',

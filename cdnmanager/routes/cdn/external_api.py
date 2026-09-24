@@ -66,7 +66,7 @@ def api_task_status():
         url = request.args.get('url')
         if not url:
             return jsonify({"success": False, "error": "url 或 url_idx 必填"}), 400
-        target = next((u for u in db.load_urls() if u.get('url') == url), None)
+        target = next((u for u in db.load_url_records() if u.get('url') == url), None)
 
     if not target:
         return jsonify({"success": False, "error": "URL 记录不存在"}), 404

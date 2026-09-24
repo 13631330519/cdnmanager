@@ -34,15 +34,12 @@ from cdnmanager.db.domains import (
     get_domain,
     get_url_by_id,
     get_visible_domains,
-    insert_url,
     insert_url_record,
     load_domains,
     load_refreshing_domains,
     load_refreshing_urls,
     load_url_records,
-    load_urls,
     prune_urls_for_domain,
-    try_acquire_polling_lease,
     update_domain_fields,
     update_url_by_id,
     upsert_domain,
@@ -100,24 +97,26 @@ from cdnmanager.db.users import (
     remove_user_from_domains,
     upsert_user,
 )
-
+from cdnmanager.db.connection import (
+    try_acquire_polling_lease,
+)
 __all__ = [
     #models
-    'ensure_database',
+    'ensure_database','try_acquire_polling_lease',
     #users
     'delete_user', 'get_user','load_users', 'remove_user_from_domains', 'upsert_user',
     #credentials
     'delete_credential', 'get_credential','load_credentials', 'upsert_credential', 
     'delete_dns_credential', 'get_dns_credential', 'load_dns_credentials', 'upsert_dns_credential', 
-    'delete_root_domain','get_root_domain','load_root_domains',  'upsert_root_domain', 
     'delete_storage_credential', 'get_storage_credential', 'load_storage_credentials', 'upsert_storage_credential',
     'delete_storage_target', 'get_storage_target', 'load_storage_targets', 'upsert_storage_target',
     #domains
     'acquire_domain_refresh', 'delete_domain_record', 'find_bound_domain', 'get_domain',
-    'get_url_by_id','get_visible_domains','insert_url', 'insert_url_record', 'load_domains',
-    'load_url_records', 'load_urls',  'load_refreshing_domains','load_refreshing_urls',
-    'prune_urls_for_domain', 'try_acquire_polling_lease','upsert_domain',  'update_domain_fields',
+    'get_url_by_id','get_visible_domains', 'insert_url_record', 'load_domains',
+    'load_url_records', 'load_refreshing_domains','load_refreshing_urls',
+    'prune_urls_for_domain', 'upsert_domain',  'update_domain_fields',
     'update_url_by_id', 'user_can_access_domain',
+    'delete_root_domain','get_root_domain','load_root_domains',  'upsert_root_domain', 
     #projects
     'generate_api_key', '_normalize_allowed_users', 'user_can_access_project', 'resolve_storage_target_for_domain',
     'load_projects', 'get_project', 'get_project_by_name', 'upsert_project', 'delete_project',

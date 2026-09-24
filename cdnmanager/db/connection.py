@@ -3,9 +3,9 @@ import os
 import socket
 import sqlite3
 import time
-from contextlib import contextmanager
-from datetime import datetime, timedelta
 
+from datetime import datetime, timedelta
+from contextlib import contextmanager
 from cdnmanager.common import DATA_DIR, DATABASE_FILE
 
 JSON_FIELDS = {'allowed_users', 'projects', 'environments', 'refresh_task_detail', 'log_entry', 'target_config'}
@@ -105,3 +105,31 @@ def run_write(work):
 
 def ensure_data_dir():
     os.makedirs(DATA_DIR, exist_ok=True)
+
+
+def try_acquire_polling_lease():
+    holder = _holder_id()
+    now_iso = datetime.now().isoformat()
+    expires_iso = (datetime.now() + timedelta(seconds=POLLING_LEASE_SECONDS)).isoformat()
+
+    def work(conn):
+        row = conn.execute(
+            'SELECT holder_id, expires_at FROM system_locks WHERE lock_name = ?',
+            (POLLING_LOCK_NAME,),
+        ).fetchone()
+        if row and row['expires_at'] > now_iso and row['holder_id'] != holder:
+            return False
+        conn.execute(
+            '''
+            INSERT INTO system_locks (lock_name, holder_id, acquired_at, expires_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(lock_name) DO UPDATE SET
+                holder_id = excluded.holder_id,
+                acquired_at = excluded.acquired_at,
+                expires_at = excluded.expires_at
+            ''',
+            (POLLING_LOCK_NAME, holder, now_iso, expires_iso),
+        )
+        return True
+
+    return run_write(work)

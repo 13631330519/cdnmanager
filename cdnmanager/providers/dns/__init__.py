@@ -6,10 +6,10 @@ modules and are not exported here.
 """
 from cdnmanager.providers.dns.dns_service import list_dns_records, update_dns_record, create_dns_record, delete_dns_record
 
-
 __all__ = [
     'list_dns_records',
     'update_dns_record', 
     'create_dns_record', 
-    'delete_dns_record'
+    'delete_dns_record',
+    'sync_cdn_cname',
 ]

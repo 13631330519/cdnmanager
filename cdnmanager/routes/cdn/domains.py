@@ -2,7 +2,7 @@ from datetime import datetime
 from flask import Blueprint, jsonify, request, session
 from cdnmanager.common import VALID_PROVIDERS, REFRESH_STATUS_NONE, REFRESH_STATUS_REFRESHING, REFRESH_STATUS_FAILED, CDN_CNAME_SUFFIXES, can_edit_domain_provider, can_manage_all_domains, log
 import cdnmanager.db as db
-import cdnmanager.providers.cdn as cdn_providers
+import cdnmanager.providers.dns as dns_service
 
 from cdnmanager.routes.common import get_session_user, require_login
 import cdnmanager.services.refresh_service as refresh_service
@@ -147,7 +147,7 @@ def edit_domain():
 
     response = {"success": True, "message": "域名已更新"}
     if provider_changed and provider in CDN_CNAME_SUFFIXES:
-        dns_result = cdn_providers.sync_cdn_cname(domain, provider)
+        dns_result = dns_service.sync_cdn_cname(domain, provider)
         response['dns_sync'] = dns_result
         if dns_result.get('success') and not dns_result.get('skipped'):
             response['message'] = f"域名已更新，DNS CNAME 已同步为 {dns_result.get('new_value')}"

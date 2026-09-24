@@ -6,7 +6,6 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 from cdnmanager.common import USER_ROLES
 import cdnmanager.db as db
-
 from cdnmanager.routes.common import get_session_user, require_admin, require_login
 
 user_bp = Blueprint('user_bp', __name__)
@@ -23,9 +22,6 @@ def save_user_route():
     denied = require_admin()
     if denied:
         return denied
-    current_user = get_session_user()
-    if not current_user or current_user.get('role') != 'admin':
-        return jsonify({"error": "无权限保存用户"}), 403
 
     username = request.form.get('username', '').strip()
     password = request.form.get('password', '').strip()
@@ -100,14 +96,12 @@ def delete_user_route():
     if denied:
         return denied
     current_user = get_session_user()
-    if not current_user or current_user.get('role') != 'admin':
-        return jsonify({"error": "无权限删除用户"}), 403
-
-    username = request.form.get('username', '').strip()
     if not username:
         return jsonify({"error": "用户名不能为空"}), 400
     if username == current_user['username']:
         return jsonify({"error": "无法删除当前登录用户"}), 400
+    
+    username = request.form.get('username', '').strip()
     if username == 'admin':
         return jsonify({"error": "无法删除超级管理员"}), 400
 

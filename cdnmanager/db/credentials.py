@@ -131,62 +131,6 @@ def delete_dns_credential(provider, credential_id):
 
     run_write(work)
 
-
-def load_root_domains():
-    return query_all(
-        '''
-        SELECT domain, domain_name, dns_provider, dns_credential_id, added_by, added_at, updated_at
-        FROM root_domains ORDER BY domain
-        '''
-    )
-
-
-def get_root_domain(domain):
-    return query_one(
-        '''
-        SELECT domain, domain_name, dns_provider, dns_credential_id, added_by, added_at, updated_at
-        FROM root_domains WHERE domain = ?
-        ''',
-        (domain,),
-    )
-
-
-def upsert_root_domain(item):
-    def work(conn):
-        conn.execute(
-            '''
-            INSERT INTO root_domains
-            (domain, domain_name, dns_provider, dns_credential_id, added_by, added_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(domain) DO UPDATE SET
-                domain_name = excluded.domain_name,
-                dns_provider = excluded.dns_provider,
-                dns_credential_id = excluded.dns_credential_id,
-                added_by = excluded.added_by,
-                added_at = excluded.added_at,
-                updated_at = excluded.updated_at
-            ''',
-            (
-                item.get('domain'),
-                item.get('domain_name'),
-                item.get('dns_provider'),
-                item.get('dns_credential_id'),
-                item.get('added_by'),
-                item.get('added_at'),
-                item.get('updated_at'),
-            ),
-        )
-
-    run_write(work)
-
-
-def delete_root_domain(domain):
-    def work(conn):
-        conn.execute('DELETE FROM root_domains WHERE domain = ?', (domain,))
-
-    run_write(work)
-
-
 def load_storage_credentials():
     rows = query_all(
         '''

@@ -5,32 +5,24 @@ from flask import Blueprint, jsonify, request
 
 import cdnmanager.db as db
 
-
-from cdnmanager.routes.common import get_session_user, require_admin
+from cdnmanager.routes.common import require_admin
 
 project_bp = Blueprint('project_bp', __name__)
 
 
-def _require_admin():
-    denied = require_admin()
-    if denied:
-        return None, denied[0], denied[1]
-    return get_session_user(), None, None
-
-
 @project_bp.route('/api/projects', methods=['GET'])
 def list_projects_route():
-    user, err, status = _require_admin()
-    if err:
-        return err, status
+    denied = require_admin()
+    if denied:
+        return denied
     return jsonify({'success': True, 'projects': db.load_projects_tree()})
 
 
 @project_bp.route('/api/projects', methods=['POST'])
 def create_project_route():
-    user, err, status = _require_admin()
-    if err:
-        return err, status
+    denied = require_admin()
+    if denied:
+        return denied
 
     data = request.get_json(silent=True) or {}
     name = (data.get('name') or '').strip()
@@ -57,9 +49,9 @@ def create_project_route():
 
 @project_bp.route('/api/projects/<project_id>', methods=['PUT'])
 def update_project_route(project_id):
-    user, err, status = _require_admin()
-    if err:
-        return err, status
+    denied = require_admin()
+    if denied:
+        return denied
 
     project = db.get_project(project_id)
     if not project:
@@ -89,9 +81,9 @@ def update_project_route(project_id):
 
 @project_bp.route('/api/projects/<project_id>', methods=['DELETE'])
 def delete_project_route(project_id):
-    user, err, status = _require_admin()
-    if err:
-        return err, status
+    denied = require_admin()
+    if denied:
+        return denied
     if not db.get_project(project_id):
         return jsonify({'error': '项目不存在'}), 404
 
@@ -110,9 +102,9 @@ def delete_project_route(project_id):
 
 @project_bp.route('/api/projects/<project_id>/regenerate-key', methods=['POST'])
 def regenerate_project_key_route(project_id):
-    user, err, status = _require_admin()
-    if err:
-        return err, status
+    denied = require_admin()
+    if denied:
+        return denied
     project = db.get_project(project_id)
     if not project:
         return jsonify({'error': '项目不存在'}), 404
@@ -128,9 +120,9 @@ def regenerate_project_key_route(project_id):
 
 @project_bp.route('/api/projects/<project_id>/environments', methods=['POST'])
 def create_environment_route(project_id):
-    user, err, status = _require_admin()
-    if err:
-        return err, status
+    denied = require_admin()
+    if denied:
+        return denied
     if not db.get_project(project_id):
         return jsonify({'error': '项目不存在'}), 404
 
@@ -157,9 +149,9 @@ def create_environment_route(project_id):
 
 @project_bp.route('/api/projects/<project_id>/environments/<environment_id>', methods=['PUT'])
 def update_environment_route(project_id, environment_id):
-    user, err, status = _require_admin()
-    if err:
-        return err, status
+    denied = require_admin()
+    if denied:
+        return denied
 
     environment = db.get_environment(environment_id)
     if not environment or environment['project_id'] != project_id:
@@ -185,9 +177,9 @@ def update_environment_route(project_id, environment_id):
 
 @project_bp.route('/api/projects/<project_id>/environments/<environment_id>', methods=['DELETE'])
 def delete_environment_route(project_id, environment_id):
-    user, err, status = _require_admin()
-    if err:
-        return err, status
+    denied = require_admin()
+    if denied:
+        return denied
 
     environment = db.get_environment(environment_id)
     if not environment or environment['project_id'] != project_id:
@@ -208,9 +200,9 @@ def delete_environment_route(project_id, environment_id):
 
 @project_bp.route('/api/projects/<project_id>/environments/<environment_id>/regenerate-key', methods=['POST'])
 def regenerate_environment_key_route(project_id, environment_id):
-    user, err, status = _require_admin()
-    if err:
-        return err, status
+    denied = require_admin()
+    if denied:
+        return denied
 
     environment = db.get_environment(environment_id)
     if not environment or environment['project_id'] != project_id:

@@ -1,17 +1,8 @@
 import json
-from datetime import datetime, timedelta
 
 from cdnmanager.common import REFRESH_STATUS_REFRESHING, URL_RECORDS_PER_DOMAIN, can_manage_all_domains, infer_domain_from_url
-from cdnmanager.db.connection import (
-    POLLING_LEASE_SECONDS,
-    POLLING_LOCK_NAME,
-    _holder_id,
-    query_all,
-    query_one,
-    run_write,
-)
+from cdnmanager.db.connection import query_all,query_one,run_write
 from cdnmanager.db.projects import get_project, user_can_access_project
-
 
 def _url_select_columns():
     return 'id, domain, url, provider, credential_id, submitted_at, completed_at, task_id, refresh_status, refresh_task_detail'
@@ -228,11 +219,6 @@ def insert_url_record(url):
         prune_urls_for_domain(domain)
     return row_id
 
-
-def insert_url(url):
-    return insert_url_record(url)
-
-
 def update_url_by_id(url_id, updates):
     if not updates:
         return False
@@ -287,11 +273,6 @@ def load_url_records(domain=None, limit_per_domain=URL_RECORDS_PER_DOMAIN):
     result.sort(key=lambda item: item.get('id') or 0, reverse=True)
     return result
 
-
-def load_urls():
-    return load_url_records()
-
-
 def prune_urls_for_domain(domain, keep=URL_RECORDS_PER_DOMAIN):
     if not domain:
         return
@@ -338,29 +319,54 @@ def load_refreshing_urls():
     )
 
 
-def try_acquire_polling_lease():
-    holder = _holder_id()
-    now_iso = datetime.now().isoformat()
-    expires_iso = (datetime.now() + timedelta(seconds=POLLING_LEASE_SECONDS)).isoformat()
+def load_root_domains():
+    return query_all(
+        '''
+        SELECT domain, domain_name, dns_provider, dns_credential_id, added_by, added_at, updated_at
+        FROM root_domains ORDER BY domain
+        '''
+    )
 
+def get_root_domain(domain):
+    return query_one(
+        '''
+        SELECT domain, domain_name, dns_provider, dns_credential_id, added_by, added_at, updated_at
+        FROM root_domains WHERE domain = ?
+        ''',
+        (domain,),
+    )
+
+def upsert_root_domain(item):
     def work(conn):
-        row = conn.execute(
-            'SELECT holder_id, expires_at FROM system_locks WHERE lock_name = ?',
-            (POLLING_LOCK_NAME,),
-        ).fetchone()
-        if row and row['expires_at'] > now_iso and row['holder_id'] != holder:
-            return False
         conn.execute(
             '''
-            INSERT INTO system_locks (lock_name, holder_id, acquired_at, expires_at)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(lock_name) DO UPDATE SET
-                holder_id = excluded.holder_id,
-                acquired_at = excluded.acquired_at,
-                expires_at = excluded.expires_at
+            INSERT INTO root_domains
+            (domain, domain_name, dns_provider, dns_credential_id, added_by, added_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(domain) DO UPDATE SET
+                domain_name = excluded.domain_name,
+                dns_provider = excluded.dns_provider,
+                dns_credential_id = excluded.dns_credential_id,
+                added_by = excluded.added_by,
+                added_at = excluded.added_at,
+                updated_at = excluded.updated_at
             ''',
-            (POLLING_LOCK_NAME, holder, now_iso, expires_iso),
+            (
+                item.get('domain'),
+                item.get('domain_name'),
+                item.get('dns_provider'),
+                item.get('dns_credential_id'),
+                item.get('added_by'),
+                item.get('added_at'),
+                item.get('updated_at'),
+            ),
         )
-        return True
 
-    return run_write(work)
+    run_write(work)
+
+
+def delete_root_domain(domain):
+    def work(conn):
+        conn.execute('DELETE FROM root_domains WHERE domain = ?', (domain,))
+
+    run_write(work)
