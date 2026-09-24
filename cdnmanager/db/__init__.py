@@ -8,22 +8,18 @@ modules and are not exported here.
 from cdnmanager.db.credentials import (
     delete_credential,
     delete_dns_credential,
-    delete_root_domain,
     delete_storage_credential,
     delete_storage_target,
     get_credential,
     get_dns_credential,
-    get_root_domain,
     get_storage_credential,
     get_storage_target,
     load_credentials,
     load_dns_credentials,
-    load_root_domains,
     load_storage_credentials,
     load_storage_targets,
     upsert_credential,
     upsert_dns_credential,
-    upsert_root_domain,
     upsert_storage_credential,
     upsert_storage_target,
 )
@@ -44,6 +40,10 @@ from cdnmanager.db.domains import (
     update_url_by_id,
     upsert_domain,
     user_can_access_domain,
+    delete_root_domain,
+    get_root_domain,
+    upsert_root_domain,
+    load_root_domains,
 )
 from cdnmanager.db.models import ensure_database
 from cdnmanager.db.projects import (

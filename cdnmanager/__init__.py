@@ -10,6 +10,8 @@ from cdnmanager.config import (
     SECRET_KEY,
 )
 import cdnmanager.db as db
+import cdnmanager.services.refresh_service as refresh_service
+import cdnmanager.services.upload_workers as upload_workers
 
 from cdnmanager.routes import register_blueprints
 from cdnmanager.views import register_views
@@ -45,12 +47,10 @@ def create_app():
         return {'asset_version': max(versions) if versions else 1}
 
     if ENABLE_TASK_POLLING:
-        import cdnmanager.services.refresh_service as refresh_service
         refresh_service.start_task_polling_thread()
 
     from cdnmanager.config import ENABLE_UPLOAD_TIMEOUT_SCAN
     if ENABLE_UPLOAD_TIMEOUT_SCAN:
-        import cdnmanager.services.upload_workers as upload_workers
         upload_workers.start_upload_timeout_thread()
 
     return app
