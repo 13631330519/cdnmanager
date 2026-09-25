@@ -11,6 +11,7 @@
                     <select id="storageTargetSelect" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500">
                         {% for item in storage_targets %}
                         <option value="{{ item.id }}"
+                                data-provider="{{ item.provider }}"
                                 data-allow-user-delete="{{ 1 if item.allow_user_delete else 0 }}">
                             {{ item.name }} ({{ storage_provider_labels.get(item.provider, item.provider) }})
                         </option>
@@ -103,7 +104,7 @@
                     </div>
                 </div>
                 <div class="px-4 py-2 bg-gray-50 text-xs text-gray-500 border-b">
-                    <span id="localSummary">未选择文件</span> · 直传不经服务器 · 大文件自动分片
+                    <span id="localSummary">未选择文件</span> · <span id="localTransferMode">直传不经服务器 · 大文件自动分片</span>
                 </div>
                 <div id="localListWrap" class="flex-grow overflow-auto max-h-[520px]">
                     <table class="min-w-full text-sm">
@@ -144,7 +145,7 @@
             </div>
         </div>
 
-        <p class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
+        <p id="uploadTransportHint" class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
             传输均走客户端 ↔ 对象存储直链，服务器仅签发凭证与列举目录。Job 记录保留至手动清理，支持失败 manifest CSV 导出。
             若直传失败，请确认 Bucket CORS 已允许 PUT/GET/HEAD 并暴露 <code>ETag</code>。
         </p>

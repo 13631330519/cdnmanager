@@ -466,8 +466,10 @@ def complete_upload_file(file_id):
     _touch_heartbeat(file_id, {'status': UPLOAD_FILE_VERIFYING})
     data = request.get_json(silent=True) or {}
     etag = (data.get('etag') or '').strip().strip('"')
+    proxy_upload = bool(data.get('proxy'))
+    ftp_family = (target.get('provider') or '') in {'ftp', 'sftp', 'ftps'}
 
-    if file_record.get('upload_id'):
+    if file_record.get('upload_id') and not (ftp_family and proxy_upload):
         expected_parts = storage_service.total_parts_for(file_record['size'])
         local_parts = [
             {'part_number': p['part_number'], 'etag': p['etag']}
@@ -518,18 +520,31 @@ def complete_upload_file(file_id):
             _maybe_cleanup_job(job['id'])
             return jsonify({'success': False, 'error': str(exc)}), 400
 
-    verify = adapter.verify_object(
-        credential, config, file_record['storage_key'], file_record['size'],
-    )
-    if not verify.get('ok'):
-        db.update_upload_file(file_id, {
-            'status': UPLOAD_FILE_FAILED,
-            'error': verify.get('error') or '校验失败',
-            'finished_at': datetime.now().isoformat(),
-        })
-        db.recalculate_upload_job_stats(job['id'])
-        _maybe_cleanup_job(job['id'])
-        return jsonify({'success': False, 'error': verify.get('error')}), 400
+    if ftp_family and proxy_upload:
+        # Bytes are already stored by POST /api/storage/upload. FTP has no ETag,
+        # and a missing SIZE/stat must not undo that successful proxy upload.
+        verify = {'ok': True, 'size': file_record['size'], 'etag': None}
+        try:
+            checked = adapter.verify_object(
+                credential, config, file_record['storage_key'], file_record['size'],
+            )
+            if checked.get('ok'):
+                verify = checked
+        except Exception as exc:
+            logger.warning('FTP 代理上传后校验失败，仍按上传成功处理: %s', exc)
+    else:
+        verify = adapter.verify_object(
+            credential, config, file_record['storage_key'], file_record['size'],
+        )
+        if not verify.get('ok'):
+            db.update_upload_file(file_id, {
+                'status': UPLOAD_FILE_FAILED,
+                'error': verify.get('error') or '校验失败',
+                'finished_at': datetime.now().isoformat(),
+            })
+            db.recalculate_upload_job_stats(job['id'])
+            _maybe_cleanup_job(job['id'])
+            return jsonify({'success': False, 'error': verify.get('error')}), 400
 
     refresh_result = None
     public_url = None

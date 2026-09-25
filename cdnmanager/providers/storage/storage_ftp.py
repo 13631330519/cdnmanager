@@ -5,6 +5,8 @@ Design goals:
 - Stream uploads/downloads directly from the remote endpoint whenever possible.
 - Avoid creating large temporary files unless the protocol requires buffering.
 - Use a single lightweight connection per request; do not persist long-lived sessions.
+- FTPS uses explicit TLS (ftplib.FTP_TLS / AUTH TLS) on port 21.
+  Implicit FTPS on port 990 is not implemented.
 """
 
 import os
@@ -19,7 +21,9 @@ import paramiko
 
 
 def _default_port(provider):
-    return {'ftp': 21, 'ftps': 990, 'sftp': 22}.get(provider, 21)
+    # FTP_TLS is explicit FTPS: connect in the clear, then AUTH TLS.
+    # That handshake uses the FTP control port (21), not implicit FTPS (990).
+    return {'ftp': 21, 'ftps': 21, 'sftp': 22}.get(provider, 21)
 
 
 def _provider_config(config, provider):
