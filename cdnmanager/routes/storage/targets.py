@@ -12,6 +12,8 @@ from cdnmanager.routes.common import require_admin
 
 storage_target_bp = Blueprint('storage_target_bp', __name__)
 
+FTP_FAMILY_PROVIDERS = {'ftp', 'sftp', 'ftps'}
+
 
 def _parse_binding(project_id, environment_id):
     project_id = (project_id or '').strip() or None
@@ -53,6 +55,9 @@ def save_storage_target_route():
         return jsonify({'error': '不支持的存储类型'}), 400
     if not name or not credential_id or not bucket or not region:
         return jsonify({'error': '名称、凭据、bucket、region 必填'}), 400
+    if provider in FTP_FAMILY_PROVIDERS:
+        if not region.isdigit() or not 1 <= int(region) <= 65535:
+            return jsonify({'error': 'FTP/SFTP/FTPS 端口必须是 1-65535 的数字'}), 400
     if not project_id or not environment_id:
         return jsonify({'error': '存储目标必须绑定项目和环境'}), 400
 
@@ -80,19 +85,20 @@ def save_storage_target_route():
     })
     message = '存储目标已更新' if existing else '存储目标已添加'
     cors_warning = None
-    try:
-        adapter = storage_service.get_adapter(provider)
-        storage_service.ensure_browser_cors(adapter, credential, {
-            'bucket': bucket,
-            'region': region,
-            'endpoint': endpoint,
-        }, ['*'])
-        message += '，已尝试配置 Bucket CORS'
-    except Exception as exc:
-        hint = ''
-        if provider == 'cos':
-            hint = '（腾讯云需授予 name/cos:GetBucketCORS 与 name/cos:PutBucketCORS，或在控制台手动配置跨域）'
-        cors_warning = f'Bucket CORS 自动配置失败，请手动配置{hint}：{exc}'
+    adapter = storage_service.get_adapter(provider)
+    if hasattr(adapter, 'ensure_browser_cors'):
+        try:
+            storage_service.ensure_browser_cors(adapter, credential, {
+                'bucket': bucket,
+                'region': region,
+                'endpoint': endpoint,
+            }, ['*'])
+            message += '，已尝试配置 Bucket CORS'
+        except Exception as exc:
+            hint = ''
+            if provider == 'cos':
+                hint = '（腾讯云需授予 name/cos:GetBucketCORS 与 name/cos:PutBucketCORS，或在控制台手动配置跨域）'
+            cors_warning = f'Bucket CORS 自动配置失败，请手动配置{hint}：{exc}'
 
     payload = {'success': True, 'message': message, 'target_id': target_id}
     if cors_warning:

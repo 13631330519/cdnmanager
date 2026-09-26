@@ -112,9 +112,10 @@
                 <select name="environment_id" id="storageTargetEnvironment" class="px-3 py-2 border rounded focus:ring-2 focus:ring-indigo-500">
                     <option value="">绑定环境</option>
                 </select>
-                <input type="text" name="bucket" placeholder="Bucket 名称" class="px-3 py-2 border rounded focus:ring-2 focus:ring-indigo-500" required>
-                <input type="text" name="region" placeholder="Region（如 oss-cn-hangzhou / ap-guangzhou）" class="px-3 py-2 border rounded focus:ring-2 focus:ring-indigo-500" required>
-                <input type="text" name="endpoint" placeholder="自定义 Endpoint（可选）" class="px-3 py-2 border rounded focus:ring-2 focus:ring-indigo-500 md:col-span-2">
+                <p id="storageTargetFieldHint" class="text-xs text-gray-500 md:col-span-3">对象存储填写 Bucket 与 Region；选择 FTP / SFTP / FTPS 后改为 Host、端口与根路径。</p>
+                <input type="text" name="bucket" id="storageTargetBucket" placeholder="Bucket 名称" class="px-3 py-2 border rounded focus:ring-2 focus:ring-indigo-500" required>
+                <input type="text" name="region" id="storageTargetRegion" placeholder="Region（如 oss-cn-hangzhou / ap-guangzhou）" class="px-3 py-2 border rounded focus:ring-2 focus:ring-indigo-500" required>
+                <input type="text" name="endpoint" id="storageTargetEndpoint" placeholder="自定义 Endpoint（可选）" class="px-3 py-2 border rounded focus:ring-2 focus:ring-indigo-500 md:col-span-2">
                 <label class="flex items-center gap-2 text-sm text-gray-600 md:col-span-3">
                     <input type="checkbox" name="allow_user_delete" value="1" class="rounded border-gray-300 text-indigo-600">
                     <span>允许普通用户删除此目标下的文件/文件夹（管理员与域名管理员始终可删）</span>

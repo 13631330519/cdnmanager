@@ -7,6 +7,17 @@
     const MAX_SMALL_CONCURRENCY = 20;
     const MAX_LARGE_CONCURRENCY = 3;
     const MAX_PART_CONCURRENCY = 6;
+    const PROXY_PROVIDERS = new Set(['ftp', 'sftp', 'ftps']);
+    const OSS_TARGET_PLACEHOLDERS = {
+        bucket: 'Bucket 名称',
+        region: 'Region（如 oss-cn-hangzhou / ap-guangzhou）',
+        endpoint: '自定义 Endpoint（可选）',
+    };
+    const FTP_TARGET_PLACEHOLDERS = {
+        bucket: 'Host（如 ftp.example.com）',
+        region: '端口（数字，FTP/FTPS 通常 21，SFTP 通常 22）',
+        endpoint: '根路径（如 /www/cdn，可选）',
+    };
 
     function initStorageAdminForms() {
         const storageTargetForm = document.getElementById('storageTargetForm');
@@ -39,6 +50,34 @@
             storageTargetEnvironment.innerHTML = options.join('');
         }
 
+        function updateStorageTargetFieldHints() {
+            if (!storageTargetForm) return;
+            const ftp = PROXY_PROVIDERS.has(storageTargetProvider?.value || '');
+            const hints = ftp ? FTP_TARGET_PLACEHOLDERS : OSS_TARGET_PLACEHOLDERS;
+            const bucket = storageTargetForm.querySelector('input[name="bucket"]');
+            const region = storageTargetForm.querySelector('input[name="region"]');
+            const endpoint = storageTargetForm.querySelector('input[name="endpoint"]');
+            if (bucket) {
+                bucket.placeholder = hints.bucket;
+                bucket.title = ftp ? '远程主机名或 IP' : 'Bucket 名称';
+            }
+            if (region) {
+                region.placeholder = hints.region;
+                region.title = ftp ? '端口，1-65535' : 'Region';
+                region.inputMode = ftp ? 'numeric' : 'text';
+            }
+            if (endpoint) {
+                endpoint.placeholder = hints.endpoint;
+                endpoint.title = ftp ? '远程根路径，可选' : '自定义 Endpoint，可选';
+            }
+            const hint = document.getElementById('storageTargetFieldHint');
+            if (hint) {
+                hint.textContent = ftp
+                    ? 'FTP / SFTP / FTPS：三个输入框依次为 Host、端口、根路径。显式 FTPS（AUTH TLS）默认端口为 21。'
+                    : '对象存储：填写 Bucket、Region，Endpoint 可选。';
+            }
+        }
+
         function updateStorageTargetCredentialOptions(selectedId) {
             if (!storageTargetProvider || !storageTargetCredential) return;
             const creds = storageCredentials[storageTargetProvider.value] || [];
@@ -62,6 +101,7 @@
             if (storageTargetProject) storageTargetProject.value = '';
             fillStorageTargetEnvironmentOptions('', '');
             updateStorageTargetCredentialOptions('');
+            updateStorageTargetFieldHints();
             modalTitle.textContent = mode === 'edit' ? '编辑存储目标' : '新建存储目标';
         }
 
@@ -83,6 +123,7 @@
                 const allowDelete = storageTargetForm.querySelector('input[name="allow_user_delete"]');
                 if (allowDelete) allowDelete.checked = row.dataset.allowUserDelete === '1';
             }
+            updateStorageTargetFieldHints();
             storageTargetModal.classList.remove('hidden');
         }
 
@@ -98,8 +139,12 @@
         storageTargetProject?.addEventListener('change', () => {
             fillStorageTargetEnvironmentOptions(storageTargetProject.value, '');
         });
-        storageTargetProvider?.addEventListener('change', () => updateStorageTargetCredentialOptions(''));
+        storageTargetProvider?.addEventListener('change', () => {
+            updateStorageTargetCredentialOptions('');
+            updateStorageTargetFieldHints();
+        });
         updateStorageTargetCredentialOptions('');
+        updateStorageTargetFieldHints();
 
         document.querySelectorAll('.edit-storage-target-btn').forEach((btn) => {
             btn.addEventListener('click', () => {
@@ -553,6 +598,111 @@
         }
     }
 
+    function selectedStorageProvider() {
+        const opt = els.target && els.target.selectedOptions && els.target.selectedOptions[0];
+        return ((opt && opt.dataset.provider) || '').toLowerCase();
+    }
+
+    function isProxyUploadTarget() {
+        return PROXY_PROVIDERS.has(selectedStorageProvider());
+    }
+
+    function updateTransportHint() {
+        const proxy = isProxyUploadTarget();
+        const mode = document.getElementById('localTransferMode');
+        if (mode) {
+            mode.textContent = proxy
+                ? '经服务器代理上传（FTP / SFTP / FTPS）'
+                : '直传不经服务器 · 大文件自动分片';
+        }
+        const hint = document.getElementById('uploadTransportHint');
+        if (!hint) return;
+        hint.className = proxy
+            ? 'text-xs text-sky-800 bg-sky-50 border border-sky-200 rounded-lg p-3'
+            : 'text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3';
+        hint.innerHTML = proxy
+            ? '当前目标为 FTP / SFTP / FTPS：文件通过服务器 <code>POST /api/storage/upload</code> 代理写入，不使用预签名直传，也不依赖对象存储 ETag。'
+            : '传输均走客户端 ↔ 对象存储直链，服务器仅签发凭证与列举目录。Job 记录保留至手动清理，支持失败 manifest CSV 导出。若直传失败，请确认 Bucket CORS 已允许 PUT/GET/HEAD 并暴露 <code>ETag</code>。';
+    }
+
+    function xhrProxyUpload(targetId, prefix, file, filename, onProgress) {
+        return new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', '/api/storage/upload');
+            const form = new FormData();
+            const remoteName = filename || file.name || 'upload.bin';
+            form.append('target_id', targetId);
+            form.append('prefix', prefix || '');
+            form.append('relative_path', remoteName);
+            form.append('file', file, remoteName);
+            if (onProgress) {
+                xhr.upload.onprogress = (event) => {
+                    if (event.lengthComputable) onProgress(event.loaded, event.total);
+                };
+            }
+            xhr.onload = () => {
+                let data = {};
+                try {
+                    data = JSON.parse(xhr.responseText || '{}');
+                } catch (_) {
+                    data = {};
+                }
+                if (xhr.status >= 200 && xhr.status < 300 && data.success) {
+                    resolve(data);
+                } else {
+                    reject(new Error(data.error || data.message || `代理上传失败 HTTP ${xhr.status}`));
+                }
+            };
+            xhr.onerror = () => reject(new Error('代理上传失败：浏览器无法连接服务器'));
+            xhr.send(form);
+        });
+    }
+
+    async function uploadProxyFile(entry, targetId, prefix) {
+        const { item, index, meta } = entry;
+        if (!meta) throw new Error('任务文件缺失');
+        const fileKey = meta.id;
+        state.fileProgress[fileKey] = 0;
+        updateLocalItem(index, { status: 'uploading', statusText: '代理上传中...', progress: 0 });
+        sendHeartbeat(fileKey, 0);
+        try {
+            const data = await xhrProxyUpload(
+                targetId,
+                prefix,
+                item.file,
+                item.path,
+                (loaded, total) => {
+                    state.fileProgress[fileKey] = loaded;
+                    const percent = total ? Math.min(100, Math.round((loaded / total) * 100)) : 0;
+                    updateLocalItem(index, { progress: percent, statusText: `${percent}%`, status: 'uploading' });
+                    updateGlobalProgress();
+                    if (loaded % (512 * 1024) < 65536) sendHeartbeat(fileKey, loaded);
+                },
+            );
+            if (!data || !data.success) throw new Error((data && data.error) || '代理上传失败');
+            let statusText = '完成';
+            try {
+                await fetchJson(`/api/upload/files/${fileKey}/complete`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ proxy: true }),
+                });
+            } catch (err) {
+                // The object is already stored. A missing ETag must not show a failed row.
+                statusText = '完成（任务记录未更新）';
+                console.warn('proxy upload complete skipped', err);
+            }
+            state.doneBytes += item.file.size;
+            updateLocalItem(index, { status: 'done', statusText, progress: 100 });
+            if (window.UploadIdb) {
+                await UploadIdb.saveFileState(state.currentJobId, fileKey, item.path, { status: 'done' });
+            }
+        } finally {
+            delete state.fileProgress[fileKey];
+            updateGlobalProgress();
+        }
+    }
+
     async function uploadPut(file, fileMeta, startData, onProgress) {
         const xhr = await xhrPut(startData.upload_url, file, (loaded, total) => {
             onProgress(loaded, total);
@@ -711,6 +861,9 @@
         }));
 
         let jobId = null;
+        const proxyUpload = isProxyUploadTarget();
+        const uploadTargetId = els.target.value;
+        const uploadPrefix = els.remotePath.value.trim();
         try {
             const jobData = await createJobInBatches(manifest);
             jobId = jobData.jobId;
@@ -729,35 +882,58 @@
                 });
             }
 
-            const large = [];
-            const small = [];
-            selected.forEach(({ item, index }, i) => {
-                const meta = jobData.files[i];
-                const entry = { item, index, meta };
-                if (item.file.size > MULTIPART_THRESHOLD) large.push(entry);
-                else small.push(entry);
-            });
-
-            els.globalText.textContent = `正在上传 0/${selected.length} 个文件...`;
-
-            let doneCount = 0;
-            async function handleLargeEntry(entry) {
-                if (state.cancelled) return;
-                try {
-                    await uploadSingleLocal(entry.item, entry.index, entry.meta);
-                    if (window.UploadIdb) {
-                        await UploadIdb.saveFileState(jobId, entry.meta.id, entry.item.path, { status: 'done' });
+            if (proxyUpload) {
+                const entries = selected.map(({ item, index }, i) => ({
+                    item,
+                    index,
+                    meta: jobData.files[i],
+                }));
+                els.globalText.textContent = `正在通过服务器代理上传 0/${selected.length} 个文件...`;
+                let doneCount = 0;
+                await runPool(entries, MAX_LARGE_CONCURRENCY, async (entry) => {
+                    if (state.cancelled) return;
+                    try {
+                        await uploadProxyFile(entry, uploadTargetId, uploadPrefix);
+                    } catch (err) {
+                        updateLocalItem(entry.index, {
+                            status: 'failed',
+                            statusText: (err.message || '代理上传失败').slice(0, 80),
+                            progress: 0,
+                        });
                     }
-                } catch (err) {
-                    updateLocalItem(entry.index, { status: 'failed', statusText: err.message.slice(0, 80), progress: 0 });
-                }
-                doneCount += 1;
-                els.globalText.textContent = `正在上传 ${doneCount}/${selected.length} 个文件...`;
-            }
+                    doneCount += 1;
+                    els.globalText.textContent = `正在通过服务器代理上传 ${doneCount}/${selected.length} 个文件...`;
+                });
+            } else {
+                const large = [];
+                const small = [];
+                selected.forEach(({ item, index }, i) => {
+                    const meta = jobData.files[i];
+                    const entry = { item, index, meta };
+                    if (item.file.size > MULTIPART_THRESHOLD) large.push(entry);
+                    else small.push(entry);
+                });
 
-            await runPool(large, MAX_LARGE_CONCURRENCY, handleLargeEntry);
-            await uploadSmallPresignBatch(small);
-            doneCount = selected.length;
+                els.globalText.textContent = `正在上传 0/${selected.length} 个文件...`;
+
+                let doneCount = 0;
+                async function handleLargeEntry(entry) {
+                    if (state.cancelled) return;
+                    try {
+                        await uploadSingleLocal(entry.item, entry.index, entry.meta);
+                        if (window.UploadIdb) {
+                            await UploadIdb.saveFileState(jobId, entry.meta.id, entry.item.path, { status: 'done' });
+                        }
+                    } catch (err) {
+                        updateLocalItem(entry.index, { status: 'failed', statusText: err.message.slice(0, 80), progress: 0 });
+                    }
+                    doneCount += 1;
+                    els.globalText.textContent = `正在上传 ${doneCount}/${selected.length} 个文件...`;
+                }
+
+                await runPool(large, MAX_LARGE_CONCURRENCY, handleLargeEntry);
+                await uploadSmallPresignBatch(small);
+            }
 
             const failed = state.localItems.filter((i) => i.status === 'failed').length;
             els.globalText.textContent = failed
@@ -866,6 +1042,7 @@
     els.target?.addEventListener('change', () => {
         state.remotePrefix = '';
         els.remotePath.value = '';
+        updateTransportHint();
         loadRemoteList();
     });
     els.remoteUp?.addEventListener('click', () => {
@@ -912,6 +1089,7 @@
 
     document.getElementById('uploadJobHistoryReload')?.addEventListener('click', () => loadJobHistory());
 
+    updateTransportHint();
     loadRemoteList().catch(() => {});
     loadJobHistory().catch(() => {});
     tryResumeSession().catch(() => {});

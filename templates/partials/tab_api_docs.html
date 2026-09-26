@@ -87,11 +87,12 @@ signature = hmac.sha256(API_Key, message).hexdigest()</code></pre>
 
             <section class="border border-gray-200 rounded-xl p-4 md:p-5">
                 <h3 class="text-lg font-semibold text-gray-800 mb-3">2. 文件上传外部 API 接入说明</h3>
-                <p class="text-sm text-gray-600">客户端直接向对象存储上传，服务端只负责签发 PUT URL、校验和可选 CDN 刷新；上传与刷新使用相同的 HMAC 签名鉴权模式。</p>
+                <p class="text-sm text-gray-600">看 init 响应里的 <code class="bg-gray-100 px-1.5 py-0.5 rounded">mode</code> 决定怎么传文件。对象存储（OSS / COS / OOS）是 <code class="bg-gray-100 px-1.5 py-0.5 rounded">presign</code>：签发 PUT URL，客户端直传。FTP / SFTP / FTPS 是 <code class="bg-gray-100 px-1.5 py-0.5 rounded">proxy</code>：把文件 POST 到 CDN Manager，由服务器写入远程目录。两条路径共用同一套 HMAC 签名。</p>
 
                 <div class="mt-5 space-y-6">
                     <div>
                         <h4 class="font-medium text-gray-800 mb-2">架构说明</h4>
+                        <p class="text-sm text-gray-600 mb-2">对象存储（<code class="bg-gray-100 px-1.5 py-0.5 rounded">mode = presign</code>）</p>
                         <pre class="bg-gray-900 text-gray-100 rounded-lg p-3 overflow-x-auto text-xs leading-6"><code>┌─────────────┐    ① init / presign / complete     ┌──────────────┐
 │  你的服务    │ ─────────────────────────────────► │ CDN Manager  │
 └─────────────┘                                    └──────────────┘
@@ -107,10 +108,27 @@ signature = hmac.sha256(API_Key, message).hexdigest()</code></pre>
 ┌─────────────┐                                    ┌──────────────┐
 │ CDN Manager │ ── 可选 CDN 刷新 ────────────────► │  CDN 边缘节点 │
 └─────────────┘                                    └──────────────┘</code></pre>
+                        <p class="text-sm text-gray-600 mt-4 mb-2">FTP / SFTP / FTPS（<code class="bg-gray-100 px-1.5 py-0.5 rounded">mode = proxy</code>）</p>
+                        <pre class="bg-gray-900 text-gray-100 rounded-lg p-3 overflow-x-auto text-xs leading-6"><code>┌─────────────┐    ① init（mode=proxy，不返回 PUT URL）  ┌──────────────┐
+│  你的服务    │ ─────────────────────────────────► │ CDN Manager  │
+└─────────────┘                                    └──────────────┘
+       │
+       │  ② POST /api/upload/proxy（multipart，文件经 CDN Manager）
+       ▼
+┌─────────────┐    ③ 服务器写入 FTP/SFTP/FTPS        ┌──────────────┐
+│ CDN Manager │ ─────────────────────────────────► │ 远程目录      │
+└─────────────┘                                    └──────────────┘
+       │
+       │  ④ complete（不需要 ETag）
+       ▼
+┌─────────────┐                                    ┌──────────────┐
+│ CDN Manager │ ── 可选 CDN 刷新 ────────────────► │  CDN 边缘节点 │
+└─────────────┘                                    └──────────────┘</code></pre>
                         <ul class="list-disc pl-5 text-sm text-gray-600 space-y-1 mt-3">
-                            <li>文件不经过 CDN Manager 服务器转发，适合大文件与批量上传。</li>
-                            <li>鉴权与 URL 刷新接口一致，基于域名 + HMAC-SHA256。</li>
-                            <li>存储目标由域名绑定的项目 / 环境自动解析，无需在请求中传 Bucket 密钥。</li>
+                            <li>对象存储：文件不经过 CDN Manager，适合大文件与批量直传。</li>
+                            <li>FTP / SFTP / FTPS：文件经 CDN Manager 转发，一次请求一个文件，不做分片。建议客户端并发不超过 3。</li>
+                            <li>鉴权与 URL 刷新接口一致，基于域名 + HMAC-SHA256。代理上传不使用浏览器登录态。</li>
+                            <li>存储目标由域名绑定的项目 / 环境自动解析，无需在请求中传 Bucket 或 FTP 密码。</li>
                         </ul>
                     </div>
 
@@ -122,7 +140,7 @@ signature = hmac.sha256(API_Key, message).hexdigest()</code></pre>
 # init
 message = {domain}{timestamp}
 
-# presign / complete
+# presign / proxy / complete
 message = {domain}{job_id}{timestamp}</code></pre>
                         <p class="text-sm text-gray-600 mt-3">说明：<code class="bg-gray-100 px-1.5 py-0.5 rounded">timestamp</code> 为 Unix 秒级时间戳，允许与服务器时差 ≤ 300 秒；若项目或环境已配置独立 Key，禁止再用公共默认 Key。</p>
                     </div>
@@ -142,12 +160,17 @@ message = {domain}{job_id}{timestamp}</code></pre>
                                     <tr>
                                         <td class="px-3 py-2">POST</td>
                                         <td class="px-3 py-2">/api/upload/init</td>
-                                        <td class="px-3 py-2">创建上传 Job，登记文件清单并批量签发小文件 PUT URL</td>
+                                        <td class="px-3 py-2">创建上传 Job。对象存储签发小文件 PUT URL；FTP 系列返回 proxy 说明</td>
                                     </tr>
                                     <tr>
                                         <td class="px-3 py-2">POST</td>
                                         <td class="px-3 py-2">/api/upload/presign</td>
-                                        <td class="px-3 py-2">为未签发成功的小文件补签 PUT URL</td>
+                                        <td class="px-3 py-2">仅为对象存储补签 PUT URL。FTP 系列返回 400</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="px-3 py-2">POST</td>
+                                        <td class="px-3 py-2">/api/upload/proxy</td>
+                                        <td class="px-3 py-2">FTP / SFTP / FTPS：multipart 上传单个文件（签名鉴权）</td>
                                     </tr>
                                     <tr>
                                         <td class="px-3 py-2">POST</td>
@@ -157,7 +180,7 @@ message = {domain}{job_id}{timestamp}</code></pre>
                                 </tbody>
                             </table>
                         </div>
-                        <p class="text-sm text-gray-600 mt-3">公共约定：<code class="bg-gray-100 px-1.5 py-0.5 rounded">Content-Type: application/json</code>；JSON 响应中 <code class="bg-gray-100 px-1.5 py-0.5 rounded">success</code> 表示执行结果，HTTP 4xx/5xx 时 body 可解析为错误对象。</p>
+                        <p class="text-sm text-gray-600 mt-3">init / presign / complete 使用 <code class="bg-gray-100 px-1.5 py-0.5 rounded">Content-Type: application/json</code>。<code class="bg-gray-100 px-1.5 py-0.5 rounded">/api/upload/proxy</code> 使用 <code class="bg-gray-100 px-1.5 py-0.5 rounded">multipart/form-data</code>。JSON 响应中 <code class="bg-gray-100 px-1.5 py-0.5 rounded">success</code> 表示执行结果，HTTP 4xx/5xx 时 body 可解析为错误对象。</p>
                     </div>
 
                     <div>
@@ -221,6 +244,7 @@ message = {domain}{job_id}{timestamp}</code></pre>
                         <p class="text-sm text-gray-600 mt-3">文件对象字段：<code class="bg-gray-100 px-1.5 py-0.5 rounded">relative_path</code>（相对路径，如 assets/app.js），<code class="bg-gray-100 px-1.5 py-0.5 rounded">size</code>（字节数），<code class="bg-gray-100 px-1.5 py-0.5 rounded">mime</code>（可选，默认 application/octet-stream）。首批最多 1000 个文件。</p>
                         <pre class="bg-gray-900 text-gray-100 rounded-lg p-3 overflow-x-auto text-xs leading-6 mt-3"><code>{
   "success": true,
+  "mode": "presign",
   "job_id": "a1b2c3d4e5f67890",
   "domain": "cdn.example.com",
   "storage_target_id": "st_oss_prod",
@@ -242,7 +266,31 @@ message = {domain}{job_id}{timestamp}</code></pre>
   ],
   "presign_errors": []
 }</code></pre>
-                        <p class="text-sm text-gray-600 mt-3">说明：单文件 ≤ 100MB 时自动签发 PUT URL；<code class="bg-gray-100 px-1.5 py-0.5 rounded">multipart: true</code> 表示大文件，当前外部 API 不支持大文件分片。若未配置存储目标，接口会返回错误。</p>
+                        <p class="text-sm text-gray-600 mt-3">对象存储：<code class="bg-gray-100 px-1.5 py-0.5 rounded">mode</code> 为 <code class="bg-gray-100 px-1.5 py-0.5 rounded">presign</code>。单文件 ≤ 100MB 时自动签发 PUT URL；<code class="bg-gray-100 px-1.5 py-0.5 rounded">multipart: true</code> 表示大文件，当前外部 API 不支持对象存储分片。响应里仍包含 <code class="bg-gray-100 px-1.5 py-0.5 rounded">presigned</code> 与 <code class="bg-gray-100 px-1.5 py-0.5 rounded">presign_errors</code>。</p>
+                        <p class="text-sm text-gray-600 mt-3">FTP / SFTP / FTPS：<code class="bg-gray-100 px-1.5 py-0.5 rounded">mode</code> 为 <code class="bg-gray-100 px-1.5 py-0.5 rounded">proxy</code>，不返回预签名 URL，<code class="bg-gray-100 px-1.5 py-0.5 rounded">multipart</code> 恒为 false。请对每个文件调用 <code class="bg-gray-100 px-1.5 py-0.5 rounded">proxy.url</code>。</p>
+                        <pre class="bg-gray-900 text-gray-100 rounded-lg p-3 overflow-x-auto text-xs leading-6 mt-3"><code>{
+  "success": true,
+  "mode": "proxy",
+  "provider": "ftps",
+  "job_id": "a1b2c3d4e5f67890",
+  "domain": "cdn.example.com",
+  "storage_target_id": "st_ftps_prod",
+  "files": [
+    {
+      "id": "f001abc123456789",
+      "relative_path": "assets/logo.png",
+      "size": 204800,
+      "multipart": false
+    }
+  ],
+  "proxy": {
+    "url": "/api/upload/proxy",
+    "method": "POST",
+    "content_type": "multipart/form-data",
+    "signature_message": "{domain}{job_id}{timestamp}",
+    "fields": ["domain", "job_id", "file_id", "timestamp", "signature", "file"]
+  }
+}</code></pre>
                     </div>
 
                     <div>
@@ -297,10 +345,11 @@ message = {domain}{job_id}{timestamp}</code></pre>
   ],
   "errors": []
 }</code></pre>
+                        <p class="text-sm text-gray-600 mt-3">仅对象存储。若 Job 的目标是 FTP / SFTP / FTPS，本接口返回 400，<code class="bg-gray-100 px-1.5 py-0.5 rounded">mode</code> 为 <code class="bg-gray-100 px-1.5 py-0.5 rounded">proxy</code>，请改调 <code class="bg-gray-100 px-1.5 py-0.5 rounded">/api/upload/proxy</code>。</p>
                     </div>
 
                     <div>
-                        <h4 class="font-medium text-gray-800 mb-2">3） 直传对象存储</h4>
+                        <h4 class="font-medium text-gray-800 mb-2">3） 直传对象存储（mode = presign）</h4>
                         <pre class="bg-gray-900 text-gray-100 rounded-lg p-3 overflow-x-auto text-xs leading-6"><code>PUT {upload_url} HTTP/1.1
 Content-Type: application/octet-stream
 Content-Length: {size}
@@ -311,11 +360,77 @@ Content-Length: {size}
                             <li>请求体大小必须与 init 中登记的 size 一致，否则 complete 校验失败。</li>
                             <li>读取响应头中的 ETag，并去掉首尾双引号后上报给 complete。</li>
                             <li>预签名 URL 有效期约 3600 秒，建议在过期前完成上传。</li>
+                            <li>仅用于 OSS / COS / OOS。FTP 系列不要 PUT 预签名地址。</li>
                         </ul>
                     </div>
 
                     <div>
-                        <h4 class="font-medium text-gray-800 mb-2">4） 完成上传 — POST /api/upload/complete</h4>
+                        <h4 class="font-medium text-gray-800 mb-2">4） FTP / SFTP / FTPS 代理上传 — POST /api/upload/proxy</h4>
+                        <p class="text-sm text-gray-600 mb-3">当 init 的 <code class="bg-gray-100 px-1.5 py-0.5 rounded">mode</code> 为 <code class="bg-gray-100 px-1.5 py-0.5 rounded">proxy</code> 时，对每个 <code class="bg-gray-100 px-1.5 py-0.5 rounded">files[].id</code> 发一次 multipart POST。签名与 presign / complete 相同：<code class="bg-gray-100 px-1.5 py-0.5 rounded">HMAC(domain + job_id + timestamp)</code>。不要调用 <code class="bg-gray-100 px-1.5 py-0.5 rounded">/api/upload/presign</code>，该接口对 FTP 系列返回 400。</p>
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
+                                <thead class="bg-gray-50 text-left">
+                                    <tr>
+                                        <th class="px-3 py-2 font-medium text-gray-700">字段</th>
+                                        <th class="px-3 py-2 font-medium text-gray-700">必填</th>
+                                        <th class="px-3 py-2 font-medium text-gray-700">说明</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-gray-200 bg-white">
+                                    <tr>
+                                        <td class="px-3 py-2">domain</td>
+                                        <td class="px-3 py-2">是</td>
+                                        <td class="px-3 py-2">表单字段，同 init</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="px-3 py-2">job_id</td>
+                                        <td class="px-3 py-2">是</td>
+                                        <td class="px-3 py-2">init 返回的 Job ID</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="px-3 py-2">file_id</td>
+                                        <td class="px-3 py-2">是</td>
+                                        <td class="px-3 py-2">files[].id。远程相对路径以登记值为准</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="px-3 py-2">timestamp</td>
+                                        <td class="px-3 py-2">是</td>
+                                        <td class="px-3 py-2">Unix 秒</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="px-3 py-2">signature</td>
+                                        <td class="px-3 py-2">是</td>
+                                        <td class="px-3 py-2">任务消息签名，不使用浏览器 Cookie</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="px-3 py-2">file</td>
+                                        <td class="px-3 py-2">是</td>
+                                        <td class="px-3 py-2">文件内容。一次请求一个文件，不分片</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <pre class="bg-gray-900 text-gray-100 rounded-lg p-3 overflow-x-auto text-xs leading-6 mt-3"><code>{
+  "success": true,
+  "mode": "proxy",
+  "provider": "ftps",
+  "job_id": "a1b2c3d4e5f67890",
+  "file_id": "f001abc123456789",
+  "relative_path": "assets/logo.png",
+  "result": {
+    "path": "/www/cdn/2026/09/assets/logo.png",
+    "size": 204800
+  }
+}</code></pre>
+                        <ul class="list-disc pl-5 text-sm text-gray-600 space-y-1 mt-3">
+                            <li>成功后文件已写入远程目录，但仍需调用 complete 才会把 Job 中的该文件标为完成，并按需刷新 CDN。</li>
+                            <li>对象存储调用本接口会返回 400，并提示改用预签名 PUT。</li>
+                            <li>字节经过应用服务器。大文件不会拆成对象存储分片；客户端并发建议不超过 3。</li>
+                        </ul>
+                    </div>
+
+                    <div>
+                        <h4 class="font-medium text-gray-800 mb-2">5） 完成上传 — POST /api/upload/complete</h4>
                         <div class="overflow-x-auto">
                             <table class="min-w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
                                 <thead class="bg-gray-50 text-left">
@@ -354,7 +469,7 @@ Content-Length: {size}
                                     <tr>
                                         <td class="px-3 py-2">etag</td>
                                         <td class="px-3 py-2">否</td>
-                                        <td class="px-3 py-2">PUT 返回的 ETag；不传时服务端会自动 HEAD 获取</td>
+                                        <td class="px-3 py-2">对象存储：PUT 返回的 ETag。FTP 系列不需要，可省略</td>
                                     </tr>
                                 </tbody>
                             </table>
@@ -379,7 +494,7 @@ Content-Length: {size}
                     </div>
 
                     <div>
-                        <h4 class="font-medium text-gray-800 mb-2">5）完整流程示例（Python）</h4>
+                        <h4 class="font-medium text-gray-800 mb-2">6）完整流程示例（Python，对象存储）</h4>
                         <pre class="bg-gray-900 text-gray-100 rounded-lg p-3 overflow-x-auto text-xs leading-6"><code>import hashlib
 import hmac
 import json
@@ -435,6 +550,9 @@ def upload_file(local_path: str, remote_path: str, refresh: bool = True) -> dict
     init = post("/api/upload/init", init_body)
     if not init.get("success"):
         raise RuntimeError(init.get("error"))
+
+    if init.get("mode") == "proxy":
+        raise RuntimeError("FTP/SFTP/FTPS 请走 /api/upload/proxy，见下方 cURL")
 
     job_id = init["job_id"]
     file_id = init["files"][0]["id"]
@@ -504,6 +622,23 @@ curl -sS -X POST "https://cdn-manager.example.com/api/upload/init" \
 # 记录响应头 ETag</code></pre>
                             </div>
                             <div>
+                                <p class="font-medium text-gray-700 mb-2">proxy（仅 FTP / SFTP / FTPS，mode=proxy）</p>
+                                <pre class="bg-gray-900 text-gray-100 rounded-lg p-3 overflow-x-auto text-xs leading-6"><code>JOB_ID="..."
+FILE_ID="..."
+TS=$(date +%s)
+MSG="${DOMAIN}${JOB_ID}${TS}"
+SIG=$(printf '%s' "$MSG" | openssl dgst -sha256 -hmac "$SECRET" | awk '{print $2}')
+
+curl -sS -X POST "https://cdn-manager.example.com/api/upload/proxy" \
+  -F "domain=$DOMAIN" \
+  -F "job_id=$JOB_ID" \
+  -F "file_id=$FILE_ID" \
+  -F "timestamp=$TS" \
+  -F "signature=$SIG" \
+  -F "file=@./hello.txt"
+# 成功后再调用 complete，etag 可省略</code></pre>
+                            </div>
+                            <div>
                                 <p class="font-medium text-gray-700 mb-2">complete</p>
                                 <pre class="bg-gray-900 text-gray-100 rounded-lg p-3 overflow-x-auto text-xs leading-6"><code>JOB_ID="..."
 FILE_ID="..."
@@ -545,8 +680,12 @@ curl -sS -X POST "https://cdn-manager.example.com/api/upload/complete" \
                                     <td class="px-3 py-2">50</td>
                                 </tr>
                                 <tr>
-                                    <td class="px-3 py-2">单文件 PUT 上限</td>
-                                    <td class="px-3 py-2">100 MB</td>
+                                    <td class="px-3 py-2">对象存储单文件 PUT 上限</td>
+                                    <td class="px-3 py-2">100 MB（更大文件外部 API 不支持分片）</td>
+                                </tr>
+                                <tr>
+                                    <td class="px-3 py-2">FTP / SFTP / FTPS</td>
+                                    <td class="px-3 py-2">单请求单文件，经服务器代理，不分片；建议并发 ≤ 3</td>
                                 </tr>
                                 <tr>
                                     <td class="px-3 py-2">预签名 URL 有效期</td>
@@ -559,7 +698,8 @@ curl -sS -X POST "https://cdn-manager.example.com/api/upload/complete" \
                             </tbody>
                         </table>
                         <ul class="list-disc pl-5 text-sm text-gray-600 space-y-1 mt-3">
-                            <li>大文件（> 100MB）暂不支持外部 API 分片上传，需在后台文件存储页上传或拆分为小文件。</li>
+                            <li>对象存储大文件（> 100MB）暂不支持外部 API 分片上传，需在后台文件存储页上传或拆分为小文件。</li>
+                            <li>FTP / SFTP / FTPS 不走预签名，也不做分片。init 返回 mode=proxy 后，用 /api/upload/proxy 上传，再 complete。complete 不要求 ETag。</li>
                             <li>外部 API 不提供 Job 进度查询，需自行跟踪 job_id 与 file_id。</li>
                             <li>若域名没有绑定项目/环境或存储目标，complete 可能成功但 refresh 失败，public_url 也可能为空。</li>
                         </ul>

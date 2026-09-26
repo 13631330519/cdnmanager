@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 from urllib.parse import urlparse
 
@@ -7,7 +8,9 @@ from cdnmanager.common import (
     UPLOAD_BATCH_INIT_SIZE,
     UPLOAD_FILE_COMPLETED,
     UPLOAD_FILE_FAILED,
+    UPLOAD_FILE_UPLOADING,
     UPLOAD_FILE_VERIFYING,
+    UPLOAD_JOB_RUNNING,
     UPLOAD_PRESIGN_BATCH_MAX,
     REFRESH_STATUS_NONE,
 )
@@ -20,6 +23,7 @@ import cdnmanager.services.refresh_service as refresh_service
 import cdnmanager.services.upload_service as upload_service
 
 external_bp = Blueprint('external_bp', __name__)
+logger = logging.getLogger(__name__)
 
 
 def _api_user(domain_name):
@@ -174,23 +178,45 @@ def api_upload_init():
     except ValueError as exc:
         return jsonify({'success': False, 'error': str(exc)}), 400
 
+    file_rows = [
+        {
+            'id': row['id'],
+            'relative_path': row['relative_path'],
+            'size': row['size'],
+            'multipart': storage_service.uses_multipart(row['size']),
+        }
+        for row in rows
+    ]
+    if storage_service.is_ftp_family(target.get('provider')):
+        for item in file_rows:
+            item['multipart'] = False
+        return jsonify({
+            'success': True,
+            'mode': 'proxy',
+            'provider': target.get('provider'),
+            'job_id': job_id,
+            'domain': domain_record['domain'],
+            'storage_target_id': target['id'],
+            'files': file_rows,
+            'proxy': {
+                'url': '/api/upload/proxy',
+                'method': 'POST',
+                'content_type': 'multipart/form-data',
+                'signature_message': '{domain}{job_id}{timestamp}',
+                'fields': ['domain', 'job_id', 'file_id', 'timestamp', 'signature', 'file'],
+            },
+        })
+
     presign_ids = [row['id'] for row in rows if not storage_service.uses_multipart(row['size'])]
     presigned, presign_errors = upload_service.presign_put_batch(presign_ids[:UPLOAD_PRESIGN_BATCH_MAX]) if presign_ids else ([], [])
 
     return jsonify({
         'success': True,
+        'mode': 'presign',
         'job_id': job_id,
         'domain': domain_record['domain'],
         'storage_target_id': target['id'],
-        'files': [
-            {
-                'id': row['id'],
-                'relative_path': row['relative_path'],
-                'size': row['size'],
-                'multipart': storage_service.uses_multipart(row['size']),
-            }
-            for row in rows
-        ],
+        'files': file_rows,
         'presigned': presigned,
         'presign_errors': presign_errors,
     })
@@ -223,6 +249,14 @@ def api_upload_presign():
     if not job or job['username'] != _api_user(domain_record['domain']):
         return jsonify({'success': False, 'error': 'Job 不存在或无权限'}), 404
 
+    target = db.get_storage_target(job['storage_target_id'])
+    if target and storage_service.is_ftp_family(target.get('provider')):
+        return jsonify({
+            'success': False,
+            'mode': 'proxy',
+            'error': 'FTP/SFTP/FTPS 不支持预签名，请 POST /api/upload/proxy',
+        }), 400
+
     for file_id in file_ids:
         file_record = db.get_upload_file(file_id)
         if not file_record or file_record['job_id'] != job_id:
@@ -230,6 +264,88 @@ def api_upload_presign():
 
     results, errors = upload_service.presign_put_batch(file_ids)
     return jsonify({'success': True, 'files': results, 'errors': errors})
+
+
+@external_bp.route('/api/upload/proxy', methods=['POST'])
+def api_upload_proxy():
+    domain_name = (request.form.get('domain') or '').strip().lower()
+    job_id = (request.form.get('job_id') or '').strip()
+    file_id = (request.form.get('file_id') or '').strip()
+    timestamp = request.form.get('timestamp')
+    signature = request.form.get('signature')
+
+    if not domain_name or not job_id or not file_id or not timestamp or not signature:
+        return jsonify({'success': False, 'error': 'domain/job_id/file_id/timestamp/signature 均为必填'}), 400
+    if 'file' not in request.files:
+        return jsonify({'success': False, 'error': 'file 必填'}), 400
+
+    domain_record = db.get_domain(domain_name) or db.find_bound_domain(domain_name)
+    if not domain_record:
+        return jsonify({'success': False, 'error': '域名不存在'}), 404
+
+    ok, error = api_auth_service.verify_domain_job_signature(
+        domain_record, job_id, timestamp, signature,
+    )
+    if not ok:
+        return jsonify({'success': False, 'error': error}), 403 if error == '验签失败' else 400
+
+    job = db.get_upload_job(job_id)
+    if not job or job['username'] != _api_user(domain_record['domain']):
+        return jsonify({'success': False, 'error': 'Job 不存在或无权限'}), 404
+
+    file_record = db.get_upload_file(file_id)
+    if not file_record or file_record['job_id'] != job_id:
+        return jsonify({'success': False, 'error': '文件任务不存在'}), 404
+    if file_record.get('status') == UPLOAD_FILE_COMPLETED:
+        return jsonify({'success': False, 'error': '文件已完成'}), 400
+
+    try:
+        target, credential, config, adapter = upload_service._job_storage_ctx(job)
+    except ValueError as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 400
+    if not storage_service.is_ftp_family(target.get('provider')):
+        return jsonify({
+            'success': False,
+            'mode': 'presign',
+            'error': '对象存储请使用预签名 PUT，不要调用 /api/upload/proxy',
+        }), 400
+
+    uploaded = request.files['file']
+    uploaded.filename = file_record['relative_path']
+    try:
+        result = adapter.upload_file(
+            credential, config, job.get('remote_prefix') or '', uploaded,
+        )
+    except Exception as exc:
+        now = datetime.now().isoformat()
+        db.update_upload_file(file_id, {
+            'status': UPLOAD_FILE_FAILED,
+            'error': str(exc),
+            'finished_at': now,
+        })
+        db.recalculate_upload_job_stats(job_id)
+        from cdnmanager.routes.storage.uploads import _maybe_cleanup_job
+        _maybe_cleanup_job(job_id)
+        return jsonify({'success': False, 'error': f'上传失败: {exc}'}), 400
+
+    now = datetime.now().isoformat()
+    db.update_upload_file(file_id, {
+        'status': UPLOAD_FILE_UPLOADING,
+        'bytes_uploaded': file_record['size'],
+        'started_at': file_record.get('started_at') or now,
+        'last_heartbeat_at': now,
+        'error': None,
+    })
+    db.update_upload_job(job_id, {'status': UPLOAD_JOB_RUNNING})
+    return jsonify({
+        'success': True,
+        'mode': 'proxy',
+        'provider': target.get('provider'),
+        'job_id': job_id,
+        'file_id': file_id,
+        'relative_path': file_record['relative_path'],
+        'result': result,
+    })
 
 
 @external_bp.route('/api/upload/complete', methods=['POST'])
@@ -270,9 +386,11 @@ def api_upload_complete():
     except ValueError as exc:
         return jsonify({'success': False, 'error': str(exc)}), 400
 
+    prior_status = file_record.get('status')
     db.update_upload_file(file_id, {'status': UPLOAD_FILE_VERIFYING})
+    ftp_family = storage_service.is_ftp_family(target.get('provider'))
 
-    if file_record.get('upload_id'):
+    if file_record.get('upload_id') and not ftp_family:
         expected_parts = storage_service.total_parts_for(file_record['size'])
         local_parts = [
             {'part_number': part['part_number'], 'etag': part['etag']}
@@ -305,18 +423,42 @@ def api_upload_complete():
             _maybe_cleanup_job(job_id)
             return jsonify({'success': False, 'error': str(exc)}), 400
 
-    verify = adapter.verify_object(
-        credential, config, file_record['storage_key'], file_record['size'],
-    )
-    if not verify.get('ok'):
-        db.update_upload_file(file_id, {
-            'status': UPLOAD_FILE_FAILED,
-            'error': verify.get('error') or '校验失败',
-            'finished_at': datetime.now().isoformat(),
-        })
-        db.recalculate_upload_job_stats(job_id)
-        _maybe_cleanup_job(job_id)
-        return jsonify({'success': False, 'error': verify.get('error')}), 400
+    if ftp_family:
+        checked = {'ok': False, 'error': '校验失败'}
+        try:
+            checked = adapter.verify_object(
+                credential, config, file_record['storage_key'], file_record['size'],
+            )
+        except Exception as exc:
+            logger.warning('FTP 外部代理上传后校验失败: %s', exc)
+            checked = {'ok': False, 'error': str(exc)}
+        proxied = prior_status in {UPLOAD_FILE_UPLOADING, UPLOAD_FILE_VERIFYING} or (file_record.get('bytes_uploaded') or 0) > 0
+        if checked.get('ok'):
+            verify = checked
+        elif proxied:
+            verify = {'ok': True, 'size': file_record['size'], 'etag': None}
+        else:
+            db.update_upload_file(file_id, {
+                'status': UPLOAD_FILE_FAILED,
+                'error': checked.get('error') or '校验失败',
+                'finished_at': datetime.now().isoformat(),
+            })
+            db.recalculate_upload_job_stats(job_id)
+            _maybe_cleanup_job(job_id)
+            return jsonify({'success': False, 'error': checked.get('error') or '校验失败'}), 400
+    else:
+        verify = adapter.verify_object(
+            credential, config, file_record['storage_key'], file_record['size'],
+        )
+        if not verify.get('ok'):
+            db.update_upload_file(file_id, {
+                'status': UPLOAD_FILE_FAILED,
+                'error': verify.get('error') or '校验失败',
+                'finished_at': datetime.now().isoformat(),
+            })
+            db.recalculate_upload_job_stats(job_id)
+            _maybe_cleanup_job(job_id)
+            return jsonify({'success': False, 'error': verify.get('error')}), 400
 
     refresh_result = None
     public_url = None

@@ -33,6 +33,10 @@ def uses_multipart(file_size):
     return file_size > UPLOAD_MULTIPART_THRESHOLD
 
 
+def is_ftp_family(provider):
+    return (provider or '') in {'ftp', 'sftp', 'ftps'}
+
+
 def get_adapter(provider):
     if provider == 'oss':
         return storage_oss

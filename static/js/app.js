@@ -198,6 +198,19 @@ function initCredentialAdminForms() {
             const resultDiv = document.getElementById('storageTargetResult');
             const submitBtn = form.querySelector('button[type="submit"]');
             if (submitBtn?.disabled) return;
+            const provider = (form.provider?.value || '').trim();
+            if (['ftp', 'sftp', 'ftps'].includes(provider)) {
+                const port = (form.region?.value || '').trim();
+                const portNumber = Number(port);
+                if (!/^\d+$/.test(port) || portNumber < 1 || portNumber > 65535) {
+                    if (resultDiv) {
+                        resultDiv.textContent = 'FTP/SFTP/FTPS 端口必须是 1-65535 的数字';
+                        resultDiv.classList.remove('hidden', 'text-green-600');
+                        resultDiv.classList.add('text-red-600');
+                    }
+                    return;
+                }
+            }
             if (submitBtn) submitBtn.disabled = true;
             resultDiv?.classList.add('hidden');
             try {

@@ -126,6 +126,11 @@ def storage_upload_objects():
 
     credential, config, adapter = ctx
     uploaded = request.files['file']
+    # Keep folder uploads intact. Some clients send only the basename as the
+    # multipart filename; relative_path is the path upload_file joins under prefix.
+    relative_name = (request.form.get('relative_path') or uploaded.filename or '').replace('\\', '/').lstrip('/')
+    if relative_name:
+        uploaded.filename = relative_name
     try:
         result = adapter.upload_file(credential, config, remote_prefix, uploaded, resume_from=resume_from)
     except Exception as exc:
