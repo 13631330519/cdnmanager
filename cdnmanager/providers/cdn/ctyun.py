@@ -10,7 +10,7 @@ import requests
 from cdnmanager.common import log
 
 CTYUN_CDN_ENDPOINT = 'https://cdnapi-global.ctapi.ctyun.cn'
-CTYUN_SUCCESS_CODE = 10000
+CTYUN_SUCCESS_CODE = 100000
 
 
 def _utc_eop_date():
