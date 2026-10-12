@@ -251,7 +251,6 @@
         localList: document.getElementById('localFileList'),
         localEmpty: document.getElementById('localEmptyHint'),
         localSummary: document.getElementById('localSummary'),
-        refreshAfter: document.getElementById('uploadRefreshAfter'),
         globalWrap: document.getElementById('globalProgressWrap'),
         globalText: document.getElementById('globalProgressText'),
         globalPercent: document.getElementById('globalProgressPercent'),
@@ -520,7 +519,6 @@
                     body: JSON.stringify({
                         storage_target_id: els.target.value,
                         remote_prefix: els.remotePath.value.trim(),
-                        refresh_after: els.refreshAfter.checked,
                         files: batch,
                     }),
                 });
@@ -876,7 +874,6 @@
                     active: true,
                     storageTargetId: els.target.value,
                     remotePrefix: els.remotePath.value.trim(),
-                    refreshAfter: els.refreshAfter.checked,
                     createdAt: new Date().toISOString(),
                     totalFiles: selected.length,
                 });
@@ -936,12 +933,13 @@
             }
 
             const failed = state.localItems.filter((i) => i.status === 'failed').length;
-            els.globalText.textContent = failed
-                ? `上传结束：${selected.length - failed} 成功，${failed} 失败`
-                : `全部上传完成（${selected.length} 个文件）`;
-
-            if (jobId && els.refreshAfter.checked) {
-                await fetchJson(`/api/upload/jobs/${jobId}/refresh-cdn`, { method: 'POST' }).catch(() => {});
+            const succeeded = selected.length - failed;
+            if (!succeeded) {
+                els.globalText.textContent = `上传结束：0 成功，${failed} 失败`;
+            } else if (failed) {
+                els.globalText.textContent = `上传结束：${succeeded} 成功，${failed} 失败。已提交成功文件的 CDN 刷新`;
+            } else {
+                els.globalText.textContent = `全部上传完成（${selected.length} 个文件），已提交 CDN 刷新`;
             }
             if (window.UploadIdb && jobId) {
                 await UploadIdb.saveSession({ jobId, active: false });

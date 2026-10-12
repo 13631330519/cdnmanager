@@ -1,5 +1,6 @@
 """Upload orchestration — manifest batching, presign batch, verify, CDN refresh."""
 
+import logging
 import uuid
 from datetime import datetime
 
@@ -17,6 +18,8 @@ from cdnmanager.common import (
 import cdnmanager.db as db
 import cdnmanager.providers.storage.storage_service as storage_service
 import cdnmanager.services.storage_refresh_service as storage_refresh_service
+
+logger = logging.getLogger(__name__)
 
 
 def build_file_rows(target, job_id, remote_prefix, files):
@@ -52,7 +55,7 @@ def build_file_rows(target, job_id, remote_prefix, files):
     return rows, total_bytes
 
 
-def create_upload_job_shell(user, storage_target_id, remote_prefix, refresh_after, first_batch=None):
+def create_upload_job_shell(user, storage_target_id, remote_prefix, first_batch=None):
     target = db.get_storage_target(storage_target_id)
     if not target:
         raise ValueError('存储目标不存在')
@@ -75,7 +78,6 @@ def create_upload_job_shell(user, storage_target_id, remote_prefix, refresh_afte
         'done_files': 0,
         'done_bytes': 0,
         'failed_files': 0,
-        'refresh_after': refresh_after,
         'created_at': datetime.now().isoformat(),
         'finished_at': None,
     })
@@ -203,22 +205,59 @@ def verify_multipart_parts(adapter, credential, config, file_record, local_parts
     return merged[:expected], None
 
 
-def batch_refresh_cdn(job, target, limit=200):
-    if not job.get('refresh_after'):
-        return {'success': True, 'refreshed': 0, 'skipped': True}
-    if not target.get('environment_id'):
-        return {'success': False, 'error': '存储目标未绑定项目/环境', 'refreshed': 0}
+def refresh_completed_job_files(job, target):
+    """Refresh only files that finished uploading. Failed files are omitted."""
+    if not target or not target.get('environment_id'):
+        return {'success': False, 'error': '存储目标未绑定项目/环境', 'refreshed': 0, 'file_count': 0}
 
-    refreshed = failed = 0
+    keys = []
     offset = 0
-    while refreshed + failed < limit:
-        files = db.list_upload_files(job['id'], status=UPLOAD_FILE_COMPLETED, limit=100, offset=offset)
+    while True:
+        files = db.list_upload_files(job['id'], status=UPLOAD_FILE_COMPLETED, limit=500, offset=offset)
         if not files:
             break
         offset += len(files)
         for file_record in files:
-            result = storage_refresh_service.refresh_file_for_target(target, file_record['storage_key'])
-            refreshed += result.get('refreshed', 0)
-            failed += result.get('failed', 0)
+            storage_key = file_record.get('storage_key')
+            if storage_key:
+                keys.append(storage_key)
 
-    return {'success': refreshed > 0 or failed == 0, 'refreshed': refreshed, 'failed': failed}
+    if not keys:
+        return {'success': True, 'refreshed': 0, 'failed': 0, 'skipped': True, 'file_count': 0}
+
+    result = storage_refresh_service.refresh_files_for_target(target, keys)
+    result['file_count'] = len(keys)
+    return result
+
+
+def finalize_finished_job(job_id):
+    """When every file is finished, refresh successful files once, then delete the job."""
+    try:
+        return _finalize_finished_job(job_id)
+    except Exception as exc:
+        logger.warning('结束上传 Job 失败 %s: %s', job_id, exc)
+        return None
+
+
+def _finalize_finished_job(job_id):
+    job = db.get_upload_job(job_id)
+    if not job:
+        return None
+    if job.get('status') not in {'completed', 'partial', 'failed', 'cancelled'}:
+        return None
+
+    active = db.count_upload_files(job_id, status='pending')
+    active += db.count_upload_files(job_id, status='uploading')
+    active += db.count_upload_files(job_id, status='verifying')
+    if active:
+        return None
+
+    if not db.claim_finished_job_cdn_refresh(job_id):
+        return None
+    target = db.get_storage_target(job['storage_target_id'])
+    try:
+        refresh_result = refresh_completed_job_files(job, target)
+    except Exception:
+        refresh_result = {'success': False, 'error': 'CDN 刷新失败', 'file_count': 0}
+    db.cleanup_finished_upload_job(job_id)
+    return refresh_result

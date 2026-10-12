@@ -39,21 +39,21 @@ def normalize_refresh_status(result):
     return REFRESH_STATUS_REFRESHING if result.get('success') else REFRESH_STATUS_FAILED
 
 
-def submit_refresh(provider, domain, credential, url=None, cpcode=None):
+def submit_refresh(provider, domain, credential, url=None, cpcode=None, urls=None):
     if provider == 'alicdn':
-        return cdn_providers.refresh_alicdn(domain, credential, url=url)
+        return cdn_providers.refresh_alicdn(domain, credential, url=url, urls=urls)
     if provider == 'tencent':
-        return cdn_providers.refresh_tencentcdn(domain, credential, url=url)
+        return cdn_providers.refresh_tencentcdn(domain, credential, url=url, urls=urls)
     if provider == 'lingzhi':
-        return cdn_providers.refresh_lingzhi(domain, credential, url=url)
+        return cdn_providers.refresh_lingzhi(domain, credential, url=url, urls=urls)
     if provider == 'akamai':
-        return cdn_providers.refresh_akamai(domain, credential, url=url, cpcode=cpcode)
+        return cdn_providers.refresh_akamai(domain, credential, url=url, cpcode=cpcode, urls=urls)
     if provider == 'ctyun':
-        return cdn_providers.refresh_ctyun(domain, credential, url=url)
+        return cdn_providers.refresh_ctyun(domain, credential, url=url, urls=urls)
     if provider == 'volcengine':
-        return cdn_providers.refresh_volcengine(domain, credential, url=url)
+        return cdn_providers.refresh_volcengine(domain, credential, url=url, urls=urls)
     if provider == 'x7host':
-        return cdn_providers.refresh_x7host(domain, credential, url=url)
+        return cdn_providers.refresh_x7host(domain, credential, url=url, urls=urls)
     return {'success': False, 'error': f'不支持的提供商: {provider}'}
 
 
@@ -101,7 +101,7 @@ def record_url_refresh(domain, provider, credential_id, result, url):
     })
 
 
-def refresh_and_record(domain_record, credential, url=None, record_url=True):
+def refresh_and_record(domain_record, credential, url=None, record_url=True, urls=None):
     """Submit refresh, update domain state, optionally append URL refresh log."""
     provider = domain_record.get('provider')
     domain = domain_record['domain']
@@ -110,11 +110,15 @@ def refresh_and_record(domain_record, credential, url=None, record_url=True):
         domain,
         credential,
         url=url,
+        urls=urls,
         cpcode=domain_record.get('cpcode'),
     )
     record_domain_refresh(domain, result)
     if record_url:
-        display_url = url or f'https://{domain}/'
+        if urls:
+            display_url = '\n'.join(urls)
+        else:
+            display_url = url or f'https://{domain}/'
         record_url_refresh(domain, provider, domain_record.get('credential_id'), result, display_url)
     return result
 

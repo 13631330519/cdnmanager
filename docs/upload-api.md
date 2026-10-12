@@ -42,7 +42,7 @@
 | 2 | 项目管理 | 为项目或环境生成 **API Key**（推荐用环境级 Key） |
 | 3 | 存储凭据 | 配置 OSS / COS / OOS 凭据 |
 | 4 | 存储目标 | 创建存储目标，**绑定同一项目与环境**，填写 Bucket / Region |
-| 5 | 域名管理 | 添加 CDN 域名，**绑定同一项目与环境**（用于解析存储目标；`refresh_after=1` 时用于刷新） |
+| 5 | 域名管理 | 添加 CDN 域名，**绑定同一项目与环境**（用于解析存储目标，并在上传完成后刷新） |
 
 **解析规则：**
 
@@ -113,7 +113,6 @@ signature = HMAC-SHA256(secret, message).hexdigest()
 | `files` | array | 是 | 文件清单，见下表 |
 | `remote_prefix` | string | 否 | 对象存储路径前缀，如 `2026/09/`（不要前导 `/`） |
 | `storage_target_id` | string | 否 | 指定存储目标 ID；省略则取环境下第一个 |
-| `refresh_after` | bool/int | 否 | `1`/`true` 时，`complete` 成功后刷新 CDN 缓存 |
 
 **`files[]` 元素：**
 
@@ -263,7 +262,7 @@ ETag: "d41d8cd98f00b204e9800998ecf8427e"
 }
 ```
 
-- `public_url`：仅当 `init` 时 `refresh_after=1` 且刷新成功时返回首个 CDN URL。
+- `public_url`：Job 内文件全部结束后，服务端刷新成功文件时返回首个 CDN URL。上传完成后不要再调用 `POST /api/refresh_url`。
 - 对象最终路径：`{remote_prefix}{relative_path}`（存储目标 Bucket 内）。
 
 ---
@@ -307,7 +306,7 @@ def post(path: str, payload: dict) -> dict:
         return json.load(resp)
 
 
-def upload_file(local_path: str, remote_path: str, refresh: bool = True) -> dict:
+def upload_file(local_path: str, remote_path: str) -> dict:
     with open(local_path, "rb") as f:
         f.seek(0, 2)
         size = f.tell()
@@ -318,7 +317,6 @@ def upload_file(local_path: str, remote_path: str, refresh: bool = True) -> dict
         "timestamp": ts,
         "signature": sig,
         "remote_prefix": "2026/09/",
-        "refresh_after": refresh,
         "files": [
             {"relative_path": remote_path, "size": size, "mime": "application/octet-stream"}
         ],
@@ -386,7 +384,6 @@ curl -sS -X POST "https://cdn-manager.example.com/api/upload/init" \
     \"timestamp\": $TS,
     \"signature\": \"$SIG\",
     \"remote_prefix\": \"2026/09/\",
-    \"refresh_after\": true,
     \"files\": [{\"relative_path\": \"test/hello.txt\", \"size\": 12}]
   }"
 ```

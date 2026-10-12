@@ -5,22 +5,21 @@ from cdnmanager.common import log
 X7HOST_REFRESH_URL = 'https://open.x7sy.com/h5/v1/cdn-refresh-tasks'
 
 
-def refresh_x7host(domain, credentials, url=None):
+def refresh_x7host(domain, credentials, url=None, urls=None):
     app_key = (credentials.get('access_key') or '').strip()
     if not app_key:
         return {'success': False, 'message': '请先配置小7托管 AppKey', 'provider': 'x7host'}
     if len(app_key) > 32:
         return {'success': False, 'message': 'AppKey 最大长度为 32', 'provider': 'x7host'}
 
-    if url and not url.endswith('/'):
+    targets = list(urls) if urls else ([url] if url else [f'https://{domain}/', f'http://{domain}/'])
+    if targets and all(not str(item).endswith('/') for item in targets):
         refresh_type = 'file'
-        urls = [url]
     else:
         refresh_type = 'directory'
-        urls = [url] if url else [f'https://{domain}/', f'http://{domain}/']
 
     payload = {
-        'urls': urls,
+        'urls': targets,
         'type': refresh_type,
         'appKey': app_key,
     }

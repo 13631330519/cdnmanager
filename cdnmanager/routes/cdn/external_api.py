@@ -17,7 +17,6 @@ from cdnmanager.common import (
 import cdnmanager.db as db
 import cdnmanager.providers.storage.storage_service as storage_service
 
-import cdnmanager.services.storage_refresh_service as storage_refresh_service
 import cdnmanager.services.api_auth_service as api_auth_service
 import cdnmanager.services.refresh_service as refresh_service
 import cdnmanager.services.upload_service as upload_service
@@ -146,7 +145,6 @@ def api_upload_init():
     files = data.get('files') or []
     remote_prefix = (data.get('remote_prefix') or '').strip()
     storage_target_id = (data.get('storage_target_id') or '').strip() or None
-    refresh_after = 1 if data.get('refresh_after') else 0
 
     if not domain_name or not timestamp or not signature:
         return jsonify({'success': False, 'error': 'domain/timestamp/signature 均为必填'}), 400
@@ -173,7 +171,7 @@ def api_upload_init():
     api_user = {'username': _api_user(domain_record['domain'])}
     try:
         job_id, rows, _ = upload_service.create_upload_job_shell(
-            api_user, target['id'], remote_prefix, refresh_after, first_batch=files,
+            api_user, target['id'], remote_prefix, first_batch=files,
         )
     except ValueError as exc:
         return jsonify({'success': False, 'error': str(exc)}), 400
@@ -324,8 +322,7 @@ def api_upload_proxy():
             'finished_at': now,
         })
         db.recalculate_upload_job_stats(job_id)
-        from cdnmanager.routes.storage.uploads import _maybe_cleanup_job
-        _maybe_cleanup_job(job_id)
+        upload_service.finalize_finished_job(job_id)
         return jsonify({'success': False, 'error': f'上传失败: {exc}'}), 400
 
     now = datetime.now().isoformat()
@@ -378,7 +375,6 @@ def api_upload_complete():
     if not job or job['username'] != _api_user(domain_record['domain']):
         return jsonify({'success': False, 'error': 'Job 无权限'}), 403
 
-    from cdnmanager.routes.storage.uploads import _maybe_cleanup_job
     _job_storage_ctx = upload_service._job_storage_ctx
 
     try:
@@ -407,7 +403,7 @@ def api_upload_complete():
                 'finished_at': datetime.now().isoformat(),
             })
             db.recalculate_upload_job_stats(job_id)
-            _maybe_cleanup_job(job_id)
+            upload_service.finalize_finished_job(job_id)
             return jsonify({'success': False, 'error': verify_err or '分片校验失败'}), 400
         try:
             etag = adapter.complete_multipart(
@@ -420,7 +416,7 @@ def api_upload_complete():
                 'finished_at': datetime.now().isoformat(),
             })
             db.recalculate_upload_job_stats(job_id)
-            _maybe_cleanup_job(job_id)
+            upload_service.finalize_finished_job(job_id)
             return jsonify({'success': False, 'error': str(exc)}), 400
 
     if ftp_family:
@@ -444,7 +440,7 @@ def api_upload_complete():
                 'finished_at': datetime.now().isoformat(),
             })
             db.recalculate_upload_job_stats(job_id)
-            _maybe_cleanup_job(job_id)
+            upload_service.finalize_finished_job(job_id)
             return jsonify({'success': False, 'error': checked.get('error') or '校验失败'}), 400
     else:
         verify = adapter.verify_object(
@@ -457,15 +453,8 @@ def api_upload_complete():
                 'finished_at': datetime.now().isoformat(),
             })
             db.recalculate_upload_job_stats(job_id)
-            _maybe_cleanup_job(job_id)
+            upload_service.finalize_finished_job(job_id)
             return jsonify({'success': False, 'error': verify.get('error')}), 400
-
-    refresh_result = None
-    public_url = None
-    if job.get('refresh_after'):
-        refresh_result = storage_refresh_service.refresh_file_for_target(target, file_record['storage_key'])
-        if refresh_result and refresh_result.get('results'):
-            public_url = refresh_result['results'][0].get('url')
 
     db.update_upload_file(file_id, {
         'status': UPLOAD_FILE_COMPLETED,
@@ -476,7 +465,10 @@ def api_upload_complete():
         'last_heartbeat_at': datetime.now().isoformat(),
     })
     db.recalculate_upload_job_stats(job_id)
-    _maybe_cleanup_job(job_id)
+    refresh_result = upload_service.finalize_finished_job(job_id)
+    public_url = None
+    if refresh_result and refresh_result.get('results'):
+        public_url = refresh_result['results'][0].get('url')
 
     return jsonify({
         'success': True,

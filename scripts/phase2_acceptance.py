@@ -42,7 +42,6 @@ def benchmark_batch_init(client, total_files=10000, batch_size=1000):
             resp = client.post('/api/upload/jobs', json={
                 'storage_target_id': target_id,
                 'remote_prefix': 'phase2-bench/',
-                'refresh_after': False,
                 'files': batch,
             })
         else:

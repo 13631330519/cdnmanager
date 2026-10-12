@@ -56,7 +56,7 @@ def sign_request(action, payload, secret_id, secret_key):
         "X-TC-Region": "ap-guangzhou"
     }, payload_str
 
-def refresh_tencentcdn(domain, credentials, url=None):
+def refresh_tencentcdn(domain, credentials, url=None, urls=None):
     if not credentials.get('access_key') or not credentials.get('secret_key'):
         return {"success": False, "message": "请先配置腾讯云 SecretId 和 SecretKey", "provider": "tencent"}
 
@@ -65,11 +65,12 @@ def refresh_tencentcdn(domain, credentials, url=None):
     if not secret_id or not secret_key:
         return {"success": False, "message": "腾讯云凭据不完整，需填写 SecretId 和 SecretKey", "provider": "tencent"}
 
-    urls = [url] if url else [f"https://{domain}/", f"http://{domain}/"]
+    targets = list(urls) if urls else ([url] if url else [f"https://{domain}/", f"http://{domain}/"])
+    file_refresh = bool(targets) and all(not str(item).endswith('/') for item in targets)
     refresh_params = {
-        "Urls": urls
-    } if url and not url.endswith('/') else{
-        "Paths": urls,
+        "Urls": targets
+    } if file_refresh else {
+        "Paths": targets,
         "FlushType": "flush"
     }
 
@@ -77,7 +78,7 @@ def refresh_tencentcdn(domain, credentials, url=None):
 
     try:
         #刷新url还是目录
-        action = "PurgeUrlsCache" if url and not url.endswith('/') else "PurgePathCache"
+        action = "PurgeUrlsCache" if file_refresh else "PurgePathCache"
         headers, payload_str = sign_request(action, refresh_params, secret_id, secret_key)
         response = requests.post(endpoint, headers=headers, data=payload_str, timeout=10)
 

@@ -100,16 +100,17 @@ def _ctyun_request(method, path, credentials, body=None, query=None):
         return {'success': False, 'message': f'天翼云 CDN 请求异常: {exc}'}
 
 
-def refresh_ctyun(domain, credentials, url=None):
+def refresh_ctyun(domain, credentials, url=None, urls=None):
     if not credentials.get('access_key') or not credentials.get('secret_key'):
         return {'success': False, 'message': '请先配置天翼云 AccessKey 和 SecretKey', 'provider': 'ctyun'}
 
-    if url and not url.endswith('/'):
+    targets = list(urls) if urls else ([url] if url else [f'https://{domain}/', f'http://{domain}/'])
+    if targets and all(not str(item).endswith('/') for item in targets):
         task_type = 1
-        values = [url]
+        values = targets
     else:
         task_type = 2
-        values = [url] if url else [f'https://{domain}/', f'http://{domain}/']
+        values = targets
 
     result = _ctyun_request(
         'POST',

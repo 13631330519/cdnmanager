@@ -9,8 +9,8 @@ def insert_upload_job(job):
             '''
             INSERT INTO upload_jobs
             (id, username, storage_target_id, remote_prefix, status, total_files, total_bytes,
-             done_files, done_bytes, failed_files, refresh_after, created_at, finished_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             done_files, done_bytes, failed_files, created_at, finished_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''',
             (
                 job.get('id'),
@@ -23,7 +23,6 @@ def insert_upload_job(job):
                 job.get('done_files', 0),
                 job.get('done_bytes', 0),
                 job.get('failed_files', 0),
-                job.get('refresh_after', 0),
                 job.get('created_at'),
                 job.get('finished_at'),
             ),
@@ -36,7 +35,7 @@ def get_upload_job(job_id):
     return query_one(
         '''
         SELECT id, username, storage_target_id, remote_prefix, status, total_files, total_bytes,
-               done_files, done_bytes, failed_files, refresh_after, created_at, finished_at
+               done_files, done_bytes, failed_files, created_at, finished_at
         FROM upload_jobs WHERE id = ?
         ''',
         (job_id,),
@@ -159,7 +158,7 @@ def list_upload_jobs(username=None, limit=50, offset=0):
         return query_all(
             '''
             SELECT id, username, storage_target_id, remote_prefix, status, total_files, total_bytes,
-                   done_files, done_bytes, failed_files, refresh_after, created_at, finished_at
+                   done_files, done_bytes, failed_files, created_at, finished_at
             FROM upload_jobs WHERE username = ?
             ORDER BY created_at DESC LIMIT ? OFFSET ?
             ''',
@@ -168,7 +167,7 @@ def list_upload_jobs(username=None, limit=50, offset=0):
     return query_all(
         '''
         SELECT id, username, storage_target_id, remote_prefix, status, total_files, total_bytes,
-               done_files, done_bytes, failed_files, refresh_after, created_at, finished_at
+               done_files, done_bytes, failed_files, created_at, finished_at
         FROM upload_jobs
         ORDER BY created_at DESC LIMIT ? OFFSET ?
         ''',
@@ -316,6 +315,9 @@ def recalculate_upload_job_stats(job_id):
         else:
             job_status = 'running'
         finished_at = datetime.now().isoformat() if pending == 0 and total > 0 else None
+        current = conn.execute('SELECT status FROM upload_jobs WHERE id = ?', (job_id,)).fetchone()
+        if current and current['status'] == 'refreshing':
+            job_status = 'refreshing'
         conn.execute(
             '''
             UPDATE upload_jobs
@@ -343,11 +345,49 @@ def delete_upload_job_cascade(job_id):
     run_write(work)
 
 
+_FINISHED_JOB_STATUSES = ('completed', 'partial', 'failed', 'cancelled')
+_ACTIVE_FILE_STATUSES = ('pending', 'uploading', 'verifying')
+
+
+def claim_finished_job_cdn_refresh(job_id):
+    """Mark a finished job so only one worker submits its CDN refresh."""
+    claimed = {'ok': False}
+
+    def work(conn):
+        row = conn.execute(
+            'SELECT id, status, storage_target_id FROM upload_jobs WHERE id = ?',
+            (job_id,),
+        ).fetchone()
+        if not row or row['status'] not in _FINISHED_JOB_STATUSES:
+            return
+        active = conn.execute(
+            f'''
+            SELECT COUNT(*) AS n FROM upload_files
+            WHERE job_id = ? AND status IN ({','.join('?' for _ in _ACTIVE_FILE_STATUSES)})
+            ''',
+            (job_id, *_ACTIVE_FILE_STATUSES),
+        ).fetchone()
+        if active and active['n']:
+            return
+        updated = conn.execute(
+            '''
+            UPDATE upload_jobs SET status = 'refreshing'
+            WHERE id = ? AND status IN ({})
+            '''.format(','.join('?' for _ in _FINISHED_JOB_STATUSES)),
+            (job_id, *_FINISHED_JOB_STATUSES),
+        )
+        if updated.rowcount == 1:
+            claimed['ok'] = True
+
+    run_write(work)
+    return claimed['ok']
+
+
 def cleanup_finished_upload_job(job_id):
     job = get_upload_job(job_id)
     if not job:
         return False
-    if job.get('status') not in {'completed', 'partial', 'failed', 'cancelled'}:
+    if job.get('status') not in {'completed', 'partial', 'failed', 'cancelled', 'refreshing'}:
         return False
     active = count_upload_files(job_id, status='uploading')
     active += count_upload_files(job_id, status='verifying')

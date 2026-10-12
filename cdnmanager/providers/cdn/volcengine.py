@@ -124,18 +124,19 @@ def _volcengine_request(action, credentials, body=None):
         return {'success': False, 'message': f'火山云 CDN 请求异常: {exc}'}
 
 
-def refresh_volcengine(domain, credentials, url=None):
+def refresh_volcengine(domain, credentials, url=None, urls=None):
     if not credentials.get('access_key') or not credentials.get('secret_key'):
         return {'success': False, 'message': '请先配置火山云 AccessKey 和 SecretKey', 'provider': 'volcengine'}
 
-    if url and not url.endswith('/'):
+    targets = list(urls) if urls else ([url] if url else [f'https://{domain}/', f'http://{domain}/'])
+    if targets and all(not str(item).endswith('/') for item in targets):
         refresh_type = 'file'
         task_type = 'refresh_file'
-        url_list = [url]
+        url_list = targets
     else:
         refresh_type = 'dir'
         task_type = 'refresh_dir'
-        url_list = [url] if url else [f'https://{domain}/', f'http://{domain}/']
+        url_list = targets
 
     result = _volcengine_request(
         'SubmitRefreshTask',

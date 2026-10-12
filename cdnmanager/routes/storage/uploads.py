@@ -23,19 +23,11 @@ from cdnmanager.common import (
 from cdnmanager.routes.common import get_session_user, require_login
 import cdnmanager.db as db
 import cdnmanager.providers.storage.storage_service as storage_service
-import cdnmanager.services.storage_refresh_service as storage_refresh_service
 import cdnmanager.services.upload_service as upload_service
 
 logger = logging.getLogger(__name__)
 
 upload_bp = Blueprint('upload_bp', __name__)
-
-
-def _maybe_cleanup_job(job_id):
-    try:
-        db.cleanup_finished_upload_job(job_id)
-    except Exception as exc:
-        logger.warning('清理上传 Job 失败 %s: %s', job_id, exc)
 
 
 def _require_login():
@@ -82,12 +74,6 @@ def _touch_heartbeat(file_id, extra=None):
     db.update_upload_file(file_id, updates)
 
 
-def _refresh_uploaded_file(target, storage_key):
-    if not target or not storage_key:
-        return None
-    return storage_refresh_service.refresh_file_for_target(target, storage_key)
-
-
 @upload_bp.route('/api/upload/jobs', methods=['GET'])
 def list_upload_jobs_route():
     user, err, status = _require_login()
@@ -110,7 +96,6 @@ def create_upload_job():
     data = request.get_json(silent=True) or {}
     storage_target_id = (data.get('storage_target_id') or '').strip()
     remote_prefix = (data.get('remote_prefix') or '').strip()
-    refresh_after = 1 if data.get('refresh_after') else 0
     files = data.get('files') or []
 
     if not storage_target_id:
@@ -123,7 +108,7 @@ def create_upload_job():
 
     try:
         job_id, rows, _target = upload_service.create_upload_job_shell(
-            user, storage_target_id, remote_prefix, refresh_after, first_batch=files,
+            user, storage_target_id, remote_prefix, first_batch=files,
         )
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 400
@@ -270,24 +255,6 @@ def export_failures_csv(job_id):
         mimetype='text/csv; charset=utf-8',
         headers={'Content-Disposition': f'attachment; filename=failures-{job_id}.csv'},
     )
-
-
-@upload_bp.route('/api/upload/jobs/<job_id>/refresh-cdn', methods=['POST'])
-def refresh_job_cdn(job_id):
-    user, err, status = _require_login()
-    if err:
-        return err, status
-    job = db.get_upload_job(job_id)
-    if not job:
-        return jsonify({'error': 'Job 不存在'}), 404
-    access_err = _check_job_access(job, user)
-    if access_err:
-        return access_err
-    target = db.get_storage_target(job['storage_target_id'])
-    if not target:
-        return jsonify({'error': '存储目标不存在'}), 404
-    result = upload_service.batch_refresh_cdn(job, target)
-    return jsonify({'success': True, **result})
 
 
 @upload_bp.route('/api/upload/jobs/<job_id>', methods=['GET'])
@@ -504,7 +471,7 @@ def complete_upload_file(file_id):
                 'finished_at': datetime.now().isoformat(),
             })
             db.recalculate_upload_job_stats(job['id'])
-            _maybe_cleanup_job(job['id'])
+            upload_service.finalize_finished_job(job['id'])
             return jsonify({'success': False, 'error': verify_err or '分片校验失败'}), 400
         try:
             etag = adapter.complete_multipart(
@@ -517,7 +484,7 @@ def complete_upload_file(file_id):
                 'finished_at': datetime.now().isoformat(),
             })
             db.recalculate_upload_job_stats(job['id'])
-            _maybe_cleanup_job(job['id'])
+            upload_service.finalize_finished_job(job['id'])
             return jsonify({'success': False, 'error': str(exc)}), 400
 
     if ftp_family and proxy_upload:
@@ -543,16 +510,8 @@ def complete_upload_file(file_id):
                 'finished_at': datetime.now().isoformat(),
             })
             db.recalculate_upload_job_stats(job['id'])
-            _maybe_cleanup_job(job['id'])
+            upload_service.finalize_finished_job(job['id'])
             return jsonify({'success': False, 'error': verify.get('error')}), 400
-
-    refresh_result = None
-    public_url = None
-    if job.get('refresh_after'):
-        refresh_result = _refresh_uploaded_file(target, file_record['storage_key'])
-        if refresh_result and refresh_result.get('results'):
-            first = refresh_result['results'][0]
-            public_url = first.get('url')
 
     db.update_upload_file(file_id, {
         'status': UPLOAD_FILE_COMPLETED,
@@ -563,13 +522,11 @@ def complete_upload_file(file_id):
         'last_heartbeat_at': datetime.now().isoformat(),
     })
     db.recalculate_upload_job_stats(job['id'])
-    _maybe_cleanup_job(job['id'])
+    upload_service.finalize_finished_job(job['id'])
 
     return jsonify({
         'success': True,
         'etag': verify.get('etag') or etag,
-        'public_url': public_url,
-        'refresh': refresh_result,
     })
 
 

@@ -70,6 +70,7 @@ from cdnmanager.db.projects import (
     user_can_access_project,
 )
 from cdnmanager.db.uploads import (
+    claim_finished_job_cdn_refresh,
     cleanup_finished_upload_job,
     count_upload_files,
     count_upload_jobs,
@@ -128,5 +129,5 @@ __all__ = [
     'insert_upload_files', 'update_upload_file', 'update_upload_job', 'increment_upload_job_totals',
     'count_upload_jobs', 'count_upload_files', 'list_failed_upload_files', 'list_stale_uploading_files',
     'insert_upload_parts', 'list_upload_parts', 'update_upload_part', 'recalculate_upload_job_stats',
-    'delete_upload_job_cascade', 'cleanup_finished_upload_job', 
+    'delete_upload_job_cascade', 'claim_finished_job_cdn_refresh', 'cleanup_finished_upload_job', 
 ]

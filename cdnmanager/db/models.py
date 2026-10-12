@@ -163,7 +163,6 @@ def initialize_database():
                 done_files INTEGER DEFAULT 0,
                 done_bytes INTEGER DEFAULT 0,
                 failed_files INTEGER DEFAULT 0,
-                refresh_after INTEGER DEFAULT 0,
                 created_at TEXT,
                 finished_at TEXT
             )
@@ -200,6 +199,41 @@ def initialize_database():
         columns = {row['name'] for row in conn.execute('PRAGMA table_info(upload_files)').fetchall()}
         if 'last_heartbeat_at' not in columns:
             conn.execute('ALTER TABLE upload_files ADD COLUMN last_heartbeat_at TEXT')
+
+        job_columns = {row['name'] for row in conn.execute('PRAGMA table_info(upload_jobs)').fetchall()}
+        if 'refresh_after' in job_columns:
+            # SQLite < 3.35 不支持 DROP COLUMN，重建表以去掉该列。
+            conn.execute(
+                '''
+                CREATE TABLE upload_jobs_new (
+                    id TEXT PRIMARY KEY,
+                    username TEXT NOT NULL,
+                    storage_target_id TEXT NOT NULL,
+                    remote_prefix TEXT,
+                    status TEXT NOT NULL,
+                    total_files INTEGER DEFAULT 0,
+                    total_bytes INTEGER DEFAULT 0,
+                    done_files INTEGER DEFAULT 0,
+                    done_bytes INTEGER DEFAULT 0,
+                    failed_files INTEGER DEFAULT 0,
+                    created_at TEXT,
+                    finished_at TEXT
+                )
+                '''
+            )
+            conn.execute(
+                '''
+                INSERT INTO upload_jobs_new (
+                    id, username, storage_target_id, remote_prefix, status, total_files, total_bytes,
+                    done_files, done_bytes, failed_files, created_at, finished_at
+                )
+                SELECT id, username, storage_target_id, remote_prefix, status, total_files, total_bytes,
+                       done_files, done_bytes, failed_files, created_at, finished_at
+                FROM upload_jobs
+                '''
+            )
+            conn.execute('DROP TABLE upload_jobs')
+            conn.execute('ALTER TABLE upload_jobs_new RENAME TO upload_jobs')
 
         from cdnmanager.common import infer_domain_from_url
         rows = conn.execute('SELECT id, url, domain FROM urls WHERE domain IS NULL OR domain = ""').fetchall()

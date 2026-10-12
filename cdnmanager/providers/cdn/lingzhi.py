@@ -6,7 +6,7 @@ from cdnmanager.common import log
 import requests
 
 
-def refresh_lingzhi(domain, credentials, url=None):
+def refresh_lingzhi(domain, credentials, url=None, urls=None):
     if not credentials.get('access_key') or not credentials.get('secret_key'):
         return {"success": False, "message": "请先配置灵知 AccessKey 和 SecretKey", "provider": "lingzhi"}
 
@@ -15,13 +15,10 @@ def refresh_lingzhi(domain, credentials, url=None):
     if not user_id or not api_key:
         return {"success": False, "message": "灵知凭据不完整，需填写 userId 和 apiKey", "provider": "lingzhi"}
 
-    urls = [url] if url else [f"https://{domain}/", f"http://{domain}/"]
-    if url and not url.endswith('/'):
-        refresh_type = "file"
-    else:
-        refresh_type = "dir"
+    targets = list(urls) if urls else ([url] if url else [f"https://{domain}/", f"http://{domain}/"])
+    refresh_type = "file" if targets and all(not str(item).endswith('/') for item in targets) else "dir"
     root = {
-        "urls": urls,
+        "urls": targets,
         "type": refresh_type,
         "tc": int(datetime.now().timestamp())
     }

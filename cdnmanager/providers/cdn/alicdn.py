@@ -5,7 +5,7 @@ from alibabacloud_tea_openapi import models as open_api_models
 from alibabacloud_cdn20180510 import models as cdn_models
 from Tea.core import TeaCore
 
-def refresh_alicdn(domain, credentials, url=None):
+def refresh_alicdn(domain, credentials, url=None, urls=None):
     if not credentials.get('access_key') or not credentials.get('secret_key'):
         return {"success": False, "message": "请先配置阿里云 AccessKey 和 SecretKey", "provider": "alicdn"}
 
@@ -14,12 +14,8 @@ def refresh_alicdn(domain, credentials, url=None):
     if not access_key or not secret_key:
         return {"success": False, "message": "阿里云凭据不完整，需填写 AccessKey 和 SecretKey", "provider": "alicdn"}
 
-    object_paths = [url] if url else [f"https://{domain}/",f"http://{domain}/"]
-
-    if url and not url.endswith('/'):
-        object_type = 'File'
-    else:
-        object_type = 'Directory'
+    object_paths = list(urls) if urls else ([url] if url else [f"https://{domain}/", f"http://{domain}/"])
+    object_type = 'File' if object_paths and all(not str(path).endswith('/') for path in object_paths) else 'Directory'
 
     try:
         config = open_api_models.Config()
@@ -32,7 +28,7 @@ def refresh_alicdn(domain, credentials, url=None):
         client = CdnClient(config)
 
         request = cdn_models.RefreshObjectCachesRequest()
-        request.set_ObjectPath(object_paths)
+        request.set_ObjectPath('\n'.join(object_paths))
         request.set_ObjectType(object_type)
 
         response = client.refresh_object_caches(request)
@@ -44,7 +40,7 @@ def refresh_alicdn(domain, credentials, url=None):
 
         return {
             "success": True,
-            "message": f"阿里云刷新请求已提交: {url or domain}, 任务ID={task_id}",
+            "message": f"阿里云刷新请求已提交: {len(object_paths)} 条, 任务ID={task_id}",
             "provider": "alicdn",
             "task_id": task_id,
             "refresh_status": "正在刷新"

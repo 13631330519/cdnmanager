@@ -106,7 +106,7 @@ signature = hmac.sha256(API_Key, message).hexdigest()</code></pre>
        │  ④ complete + ETag
        ▼
 ┌─────────────┐                                    ┌──────────────┐
-│ CDN Manager │ ── 可选 CDN 刷新 ────────────────► │  CDN 边缘节点 │
+│ CDN Manager │ ── Job 结束后自动刷新成功文件 ──► │  CDN 边缘节点 │
 └─────────────┘                                    └──────────────┘</code></pre>
                         <p class="text-sm text-gray-600 mt-4 mb-2">FTP / SFTP / FTPS（<code class="bg-gray-100 px-1.5 py-0.5 rounded">mode = proxy</code>）</p>
                         <pre class="bg-gray-900 text-gray-100 rounded-lg p-3 overflow-x-auto text-xs leading-6"><code>┌─────────────┐    ① init（mode=proxy，不返回 PUT URL）  ┌──────────────┐
@@ -122,13 +122,14 @@ signature = hmac.sha256(API_Key, message).hexdigest()</code></pre>
        │  ④ complete（不需要 ETag）
        ▼
 ┌─────────────┐                                    ┌──────────────┐
-│ CDN Manager │ ── 可选 CDN 刷新 ────────────────► │  CDN 边缘节点 │
+│ CDN Manager │ ── Job 结束后自动刷新成功文件 ──► │  CDN 边缘节点 │
 └─────────────┘                                    └──────────────┘</code></pre>
                         <ul class="list-disc pl-5 text-sm text-gray-600 space-y-1 mt-3">
                             <li>对象存储：文件不经过 CDN Manager，适合大文件与批量直传。</li>
                             <li>FTP / SFTP / FTPS：文件经 CDN Manager 转发，一次请求一个文件，不做分片。建议客户端并发不超过 3。</li>
                             <li>鉴权与 URL 刷新接口一致，基于域名 + HMAC-SHA256。代理上传不使用浏览器登录态。</li>
                             <li>存储目标由域名绑定的项目 / 环境自动解析，无需在请求中传 Bucket 或 FTP 密码。</li>
+                            <li>上传接口完成后由服务端自动刷新 CDN。只需把本次 Job 的文件全部 <code class="bg-gray-100 px-1.5 py-0.5 rounded">complete</code>，不要再调用 <code class="bg-gray-100 px-1.5 py-0.5 rounded">POST /api/refresh_url</code>。</li>
                         </ul>
                     </div>
 
@@ -175,7 +176,7 @@ message = {domain}{job_id}{timestamp}</code></pre>
                                     <tr>
                                         <td class="px-3 py-2">POST</td>
                                         <td class="px-3 py-2">/api/upload/complete</td>
-                                        <td class="px-3 py-2">确认上传完成、服务端校验并可选触发 CDN 刷新</td>
+                                        <td class="px-3 py-2">确认上传完成并校验。Job 内文件全部结束后，服务端自动刷新成功文件</td>
                                     </tr>
                                 </tbody>
                             </table>
@@ -232,16 +233,10 @@ message = {domain}{job_id}{timestamp}</code></pre>
                                         <td class="px-3 py-2">否</td>
                                         <td class="px-3 py-2">指定存储目标；不传则用环境下第一个</td>
                                     </tr>
-                                    <tr>
-                                        <td class="px-3 py-2">refresh_after</td>
-                                        <td class="px-3 py-2">bool/int</td>
-                                        <td class="px-3 py-2">否</td>
-                                        <td class="px-3 py-2">为 true / 1 时，complete 成功后执行 CDN 刷新</td>
-                                    </tr>
                                 </tbody>
                             </table>
                         </div>
-                        <p class="text-sm text-gray-600 mt-3">文件对象字段：<code class="bg-gray-100 px-1.5 py-0.5 rounded">relative_path</code>（相对路径，如 assets/app.js），<code class="bg-gray-100 px-1.5 py-0.5 rounded">size</code>（字节数），<code class="bg-gray-100 px-1.5 py-0.5 rounded">mime</code>（可选，默认 application/octet-stream）。首批最多 1000 个文件。</p>
+                        <p class="text-sm text-gray-600 mt-3">文件对象字段：<code class="bg-gray-100 px-1.5 py-0.5 rounded">relative_path</code>（相对路径，如 assets/app.js），<code class="bg-gray-100 px-1.5 py-0.5 rounded">size</code>（字节数），<code class="bg-gray-100 px-1.5 py-0.5 rounded">mime</code>（可选，默认 application/octet-stream）。首批最多 1000 个文件。Job 内文件全部结束后，服务端自动刷新上传成功的文件。</p>
                         <pre class="bg-gray-900 text-gray-100 rounded-lg p-3 overflow-x-auto text-xs leading-6 mt-3"><code>{
   "success": true,
   "mode": "presign",
@@ -423,7 +418,7 @@ Content-Length: {size}
   }
 }</code></pre>
                         <ul class="list-disc pl-5 text-sm text-gray-600 space-y-1 mt-3">
-                            <li>成功后文件已写入远程目录，但仍需调用 complete 才会把 Job 中的该文件标为完成，并按需刷新 CDN。</li>
+                            <li>成功后文件已写入远程目录，但仍需调用 complete 才会把 Job 中的该文件标为完成。全部文件 complete 后，服务端自动刷新上传成功的文件，调用方不要再请求 <code class="bg-gray-100 px-1.5 py-0.5 rounded">POST /api/refresh_url</code>。</li>
                             <li>对象存储调用本接口会返回 400，并提示改用预签名 PUT。</li>
                             <li>字节经过应用服务器。大文件不会拆成对象存储分片；客户端并发建议不超过 3。</li>
                         </ul>
@@ -491,6 +486,11 @@ Content-Length: {size}
     ]
   }
 }</code></pre>
+                        <ul class="list-disc pl-5 text-sm text-gray-600 space-y-1 mt-3">
+                            <li>最后一个文件 complete 且 Job 内没有进行中的文件时，服务端只刷新状态为成功的文件，失败文件不会进入刷新请求。</li>
+                            <li>同一 CDN 域名的成功文件合并为一条刷新请求。<code class="bg-gray-100 px-1.5 py-0.5 rounded">refresh</code> 只出现在触发这次刷新的那次 complete 响应里；更早完成的文件响应里 <code class="bg-gray-100 px-1.5 py-0.5 rounded">refresh</code> 为空。</li>
+                            <li>上传流程结束后不要再调用 <code class="bg-gray-100 px-1.5 py-0.5 rounded">POST /api/refresh_url</code>。该接口用于单独刷新某个已有 URL，重复调用会造成同一资源刷新两次。</li>
+                        </ul>
                     </div>
 
                     <div>
@@ -531,7 +531,7 @@ def post(path: str, payload: dict) -> dict:
         return json.load(resp)
 
 
-def upload_file(local_path: str, remote_path: str, refresh: bool = True) -> dict:
+def upload_file(local_path: str, remote_path: str) -> dict:
     with open(local_path, "rb") as f:
         f.seek(0, 2)
         size = f.tell()
@@ -542,7 +542,6 @@ def upload_file(local_path: str, remote_path: str, refresh: bool = True) -> dict
         "timestamp": ts,
         "signature": sig,
         "remote_prefix": "2026/09/",
-        "refresh_after": refresh,
         "files": [
             {"relative_path": remote_path, "size": size, "mime": "application/octet-stream"}
         ],
@@ -610,7 +609,6 @@ curl -sS -X POST "https://cdn-manager.example.com/api/upload/init" \
     \"timestamp\": $TS,
     \"signature\": \"$SIG\",
     \"remote_prefix\": \"2026/09/\",
-    \"refresh_after\": true,
     \"files\": [{\"relative_path\": \"test/hello.txt\", \"size\": 12}]
   }"</code></pre>
                             </div>
@@ -701,7 +699,8 @@ curl -sS -X POST "https://cdn-manager.example.com/api/upload/complete" \
                             <li>对象存储大文件（> 100MB）暂不支持外部 API 分片上传，需在后台文件存储页上传或拆分为小文件。</li>
                             <li>FTP / SFTP / FTPS 不走预签名，也不做分片。init 返回 mode=proxy 后，用 /api/upload/proxy 上传，再 complete。complete 不要求 ETag。</li>
                             <li>外部 API 不提供 Job 进度查询，需自行跟踪 job_id 与 file_id。</li>
-                            <li>若域名没有绑定项目/环境或存储目标，complete 可能成功但 refresh 失败，public_url 也可能为空。</li>
+                            <li>若域名没有绑定项目/环境或存储目标，文件仍可能上传成功，但自动 CDN 刷新会失败，public_url 也可能为空。</li>
+                            <li>调用上传接口并 complete 后，不需要再调用 POST /api/refresh_url。</li>
                         </ul>
                     </div>
                 </div>

@@ -68,7 +68,7 @@ def check_akamai_refresh(refresh_task_detail):
     }
 
 
-def refresh_akamai(domain, credentials, url=None, cpcode=None):
+def refresh_akamai(domain, credentials, url=None, cpcode=None, urls=None):
     client_token, client_secret, access_token, api_host = _parse_akamai_credentials(credentials)
     if not client_token or not client_secret or not access_token:
         return {
@@ -77,10 +77,11 @@ def refresh_akamai(domain, credentials, url=None, cpcode=None):
             "provider": "akamai",
         }
 
-    if url:
+    targets = list(urls) if urls else ([url] if url else [])
+    if targets:
         api_endpoint = f'{api_host}/ccu/v3/invalidate/url/production'
-        payload = {'objects': [url]}
-        purge_target = url
+        payload = {'objects': targets}
+        purge_target = targets[0] if len(targets) == 1 else f'{len(targets)} urls'
     else:
         if not cpcode:
             return {

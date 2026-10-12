@@ -98,7 +98,7 @@ PATCH  /api/upload/files/{id}/progress        进度心跳
 | 7 | Verify 强化 | `verify_multipart_parts` ListParts 全量核对 | ✅ |
 | 8 | OOS 适配 | `providers/storage_oos.py`（boto3 S3） | ✅ |
 | 9 | Job 管理页 | 历史 Job、失败 manifest CSV | ✅ |
-| 10 | CDN 批量刷新 | `POST /api/upload/jobs/{id}/refresh-cdn` | ✅ |
+| 10 | CDN 批量刷新 | Job 全部结束后由服务端刷新成功文件 | ✅ |
 
 ### API 增量（Phase 2）
 
