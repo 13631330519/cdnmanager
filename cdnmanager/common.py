@@ -166,7 +166,10 @@ REFRESH_STATUS_FAILED = '刷新失败'
 # CDN 提供商对应的 DNS CNAME 后缀（不含末尾点）
 CDN_CNAME_SUFFIXES = {
     'lingzhi': 'xmdqkj.cn',
+    'alicdn': 'cdn.aliyuncs.com',
     'tencent': 'cdn.dnsv1.com',
+    'ctyun': 'ctadns.cn.',
+    'volcengine': 'volcenginecdn.com',
 }
 KNOWN_CDN_CNAME_SUFFIXES = list(CDN_CNAME_SUFFIXES.values())
 
