@@ -23,14 +23,38 @@ def _endpoint(config):
     return endpoint.rstrip('/')
 
 
+def _signing_region(config, endpoint):
+    host = endpoint.split('://', 1)[-1].split('/')[0].lower()
+    # ZOS 各资源池的 SigV4 Region 固定为 us-east-1，不能用 beijing-5 这类资源池名。
+    if host.endswith('.zos.ctyun.cn'):
+        return 'us-east-1'
+    return (config.get('region') or 'cn').strip() or 'cn'
+
+
+def _client_config():
+    kwargs = {
+        'signature_version': 's3v4',
+        's3': {'addressing_style': 'path'},
+    }
+    try:
+        return Config(
+            request_checksum_calculation='when_required',
+            response_checksum_validation='when_required',
+            **kwargs,
+        )
+    except TypeError:
+        return Config(**kwargs)
+
+
 def _client(credential, config):
+    endpoint = _endpoint(config)
     return boto3.client(
         's3',
-        endpoint_url=_endpoint(config),
+        endpoint_url=endpoint,
         aws_access_key_id=credential['access_key'],
         aws_secret_access_key=credential['secret_key'],
-        region_name=(config.get('region') or 'cn').strip() or 'cn',
-        config=Config(signature_version='s3v4', s3={'addressing_style': 'path'}),
+        region_name=_signing_region(config, endpoint),
+        config=_client_config(),
     )
 
 
@@ -40,12 +64,11 @@ def _bucket(config):
 
 def presign_put(credential, config, object_key, mime=None):
     client = _client(credential, config)
-    params = {'Bucket': _bucket(config), 'Key': object_key}
-    if mime:
-        params['ContentType'] = mime
+    # 浏览器直传只签 host。签入 content-type 后，浏览器未带上完全一致的头时，
+    # ZOS 返回 403 且不带 CORS 头，页面上会表现为跨域失败。
     return client.generate_presigned_url(
         'put_object',
-        Params=params,
+        Params={'Bucket': _bucket(config), 'Key': object_key},
         ExpiresIn=UPLOAD_PRESIGN_EXPIRES,
     )
 

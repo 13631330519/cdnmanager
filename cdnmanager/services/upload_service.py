@@ -150,8 +150,8 @@ def presign_put_batch(file_ids, origin=None):
         cors_origins = [origin] if origin else ['*']
         try:
             storage_service.ensure_browser_cors(adapter, credential, config, cors_origins)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning('自动配置存储 CORS 失败: %s', exc)
 
         try:
             upload_url = adapter.presign_put(
