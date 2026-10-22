@@ -96,12 +96,12 @@ def delete_user_route():
     if denied:
         return denied
     current_user = get_session_user()
+    username = request.form.get('username', '').strip()
     if not username:
         return jsonify({"error": "用户名不能为空"}), 400
     if username == current_user['username']:
         return jsonify({"error": "无法删除当前登录用户"}), 400
     
-    username = request.form.get('username', '').strip()
     if username == 'admin':
         return jsonify({"error": "无法删除超级管理员"}), 400
 
