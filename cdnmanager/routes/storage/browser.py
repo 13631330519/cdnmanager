@@ -143,23 +143,35 @@ def storage_mkdir():
     data = request.get_json(silent=True) or {}
     target_id = (data.get('target_id') or '').strip()
     directory_name = (data.get('directory_name') or '').strip()
-    if not target_id or not directory_name:
-        return jsonify({'error': 'target_id 与 directory_name 必填'}), 400
+    directories = data.get('directories') or []
+    if directory_name:
+        directories = [directory_name] + list(directories)
+    directories = [
+        (item or '').replace('\\', '/').strip('/')
+        for item in directories
+        if (item or '').replace('\\', '/').strip('/')
+    ]
+    # 浅目录先创建，保证父级存在。
+    directories = sorted(set(directories), key=lambda item: (item.count('/'), item))
+    if not target_id or not directories:
+        return jsonify({'error': 'target_id 与 directory_name/directories 必填'}), 400
 
-    user, target, ctx, err, status = _target_context(target_id)
+    _user, target, ctx, err, status = _target_context(target_id)
     if err:
         return err, status
-    if not can_storage_delete(user, target):
-        return jsonify({'error': '无创建权限'}), 403
-    if target['provider'] not in {'ftp', 'sftp', 'ftps'}:
-        return jsonify({'error': '仅对 FTP/SFTP/FTPS 目标开放目录创建'}), 400
+    if not hasattr(ctx[2], 'mkdir'):
+        return jsonify({'error': f'{target["provider"]} 不支持新建目录'}), 400
 
     credential, config, adapter = ctx
+    created = []
     try:
-        result = adapter.mkdir(credential, config, directory_name)
+        for directory in directories:
+            # 与列举一致：目录落在目标 base_path + 当前相对路径下。
+            object_prefix = storage_service.build_list_prefix(config, directory)
+            created.append(adapter.mkdir(credential, config, object_prefix.rstrip('/')))
     except Exception as exc:
-        return jsonify({'error': f'新建目录失败: {exc}'}), 400
-    return jsonify({'success': True, 'result': result})
+        return jsonify({'error': f'新建目录失败: {exc}', 'created': created}), 400
+    return jsonify({'success': True, 'created': created, 'count': len(created)})
 
 
 @storage_browser_bp.route('/api/storage/rename', methods=['POST'])

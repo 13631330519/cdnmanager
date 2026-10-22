@@ -164,7 +164,8 @@ def initialize_database():
                 done_bytes INTEGER DEFAULT 0,
                 failed_files INTEGER DEFAULT 0,
                 created_at TEXT,
-                finished_at TEXT
+                finished_at TEXT,
+                manifest_open INTEGER NOT NULL DEFAULT 0
             )
             '''
         )
@@ -234,6 +235,10 @@ def initialize_database():
             )
             conn.execute('DROP TABLE upload_jobs')
             conn.execute('ALTER TABLE upload_jobs_new RENAME TO upload_jobs')
+
+        job_columns = {row['name'] for row in conn.execute('PRAGMA table_info(upload_jobs)').fetchall()}
+        if 'manifest_open' not in job_columns:
+            conn.execute('ALTER TABLE upload_jobs ADD COLUMN manifest_open INTEGER NOT NULL DEFAULT 0')
 
         from cdnmanager.common import infer_domain_from_url
         rows = conn.execute('SELECT id, url, domain FROM urls WHERE domain IS NULL OR domain = ""').fetchall()

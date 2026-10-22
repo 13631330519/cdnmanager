@@ -10,7 +10,10 @@ from cdnmanager.common import (
     UPLOAD_FILE_FAILED,
     UPLOAD_FILE_PENDING,
     UPLOAD_FILE_UPLOADING,
+    UPLOAD_JOB_COMPLETED,
+    UPLOAD_JOB_FAILED,
     UPLOAD_JOB_MAX_FILES,
+    UPLOAD_JOB_PARTIAL,
     UPLOAD_JOB_PENDING,
     UPLOAD_JOB_RUNNING,
     UPLOAD_PRESIGN_BATCH_MAX,
@@ -55,7 +58,7 @@ def build_file_rows(target, job_id, remote_prefix, files):
     return rows, total_bytes
 
 
-def create_upload_job_shell(user, storage_target_id, remote_prefix, first_batch=None):
+def create_upload_job_shell(user, storage_target_id, remote_prefix, first_batch=None, keep_open=False):
     target = db.get_storage_target(storage_target_id)
     if not target:
         raise ValueError('存储目标不存在')
@@ -80,6 +83,7 @@ def create_upload_job_shell(user, storage_target_id, remote_prefix, first_batch=
         'failed_files': 0,
         'created_at': datetime.now().isoformat(),
         'finished_at': None,
+        'manifest_open': 1 if keep_open else 0,
     })
     if rows:
         db.insert_upload_files(rows)
@@ -90,7 +94,11 @@ def append_manifest_batch(job_id, files):
     job = db.get_upload_job(job_id)
     if not job:
         raise ValueError('Job 不存在')
-    if job['status'] not in {UPLOAD_JOB_PENDING, UPLOAD_JOB_RUNNING}:
+    open_manifest = bool(job.get('manifest_open'))
+    allowed = {UPLOAD_JOB_PENDING, UPLOAD_JOB_RUNNING}
+    if open_manifest:
+        allowed.update({UPLOAD_JOB_COMPLETED, UPLOAD_JOB_PARTIAL, UPLOAD_JOB_FAILED})
+    if job['status'] not in allowed:
         raise ValueError(f'Job 状态不可追加: {job["status"]}')
 
     if len(files) > UPLOAD_BATCH_INIT_SIZE:
@@ -105,8 +113,8 @@ def append_manifest_batch(job_id, files):
     rows, total_bytes = build_file_rows(target, job_id, job.get('remote_prefix') or '', files)
     db.insert_upload_files(rows)
     db.increment_upload_job_totals(job_id, len(rows), total_bytes)
-    if job['status'] == UPLOAD_JOB_PENDING:
-        db.update_upload_job(job_id, {'status': UPLOAD_JOB_PENDING})
+    if open_manifest or job['status'] == UPLOAD_JOB_PENDING:
+        db.update_upload_job(job_id, {'status': UPLOAD_JOB_RUNNING if open_manifest else UPLOAD_JOB_PENDING})
     return rows
 
 
@@ -230,6 +238,17 @@ def refresh_completed_job_files(job, target):
     return result
 
 
+def close_upload_manifest(job_id):
+    """Stop accepting files, then refresh and clean up if every file is finished."""
+    job = db.get_upload_job(job_id)
+    if not job:
+        raise ValueError('Job 不存在')
+    if job.get('manifest_open'):
+        db.update_upload_job(job_id, {'manifest_open': 0})
+    db.recalculate_upload_job_stats(job_id)
+    return finalize_finished_job(job_id)
+
+
 def finalize_finished_job(job_id):
     """When every file is finished, refresh successful files once, then delete the job."""
     try:
@@ -242,6 +261,8 @@ def finalize_finished_job(job_id):
 def _finalize_finished_job(job_id):
     job = db.get_upload_job(job_id)
     if not job:
+        return None
+    if job.get('manifest_open'):
         return None
     if job.get('status') not in {'completed', 'partial', 'failed', 'cancelled'}:
         return None

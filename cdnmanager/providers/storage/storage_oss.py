@@ -121,28 +121,49 @@ def presign_get(credential, config, object_key):
     return url.replace('http://', 'https://') if url.startswith('http://') else url
 
 
-def list_objects(credential, config, prefix='', delimiter='/', max_keys=500):
+def list_objects(credential, config, prefix='', delimiter='/', max_keys=1000):
     bucket = _bucket_client(credential, config)
-    result = bucket.list_objects(prefix=prefix, delimiter=delimiter, max_keys=max_keys)
     folders = []
     files = []
-    for folder in result.prefix_list or []:
-        name = folder[len(prefix):].rstrip('/')
-        if name:
-            folders.append({'prefix': folder, 'name': name})
-    for obj in result.object_list or []:
-        if obj.key == prefix or obj.key.endswith('/'):
-            continue
-        name = obj.key[len(prefix):] if obj.key.startswith(prefix) else obj.key
-        if not name or '/' in name.rstrip('/'):
-            continue
-        files.append({
-            'key': obj.key,
-            'name': name,
-            'size': obj.size,
-            'last_modified': obj.last_modified,
-        })
+    marker = ''
+    while True:
+        result = bucket.list_objects(
+            prefix=prefix, delimiter=delimiter, max_keys=max_keys, marker=marker,
+        )
+        for folder in result.prefix_list or []:
+            name = folder[len(prefix):].rstrip('/')
+            if name:
+                folders.append({'prefix': folder, 'name': name})
+        for obj in result.object_list or []:
+            if obj.key == prefix or obj.key.endswith('/'):
+                continue
+            name = obj.key[len(prefix):] if obj.key.startswith(prefix) else obj.key
+            if not name or '/' in name.rstrip('/'):
+                continue
+            files.append({
+                'key': obj.key,
+                'name': name,
+                'size': obj.size,
+                'last_modified': obj.last_modified,
+            })
+        if not result.is_truncated:
+            break
+        marker = result.next_marker or ''
+        if not marker:
+            break
+    folders.sort(key=lambda item: item['name'].lower())
+    files.sort(key=lambda item: item['name'].lower())
     return {'prefix': prefix, 'folders': folders, 'files': files}
+
+
+def mkdir(credential, config, directory_name):
+    bucket = _bucket_client(credential, config)
+    key = (directory_name or '').replace('\\', '/').strip('/')
+    if not key:
+        raise ValueError('目录名不能为空')
+    key = f'{key}/'
+    bucket.put_object(key, b'')
+    return {'path': key, 'ok': True}
 
 
 def delete_objects(credential, config, object_keys):

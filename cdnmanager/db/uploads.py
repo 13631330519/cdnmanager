@@ -9,8 +9,8 @@ def insert_upload_job(job):
             '''
             INSERT INTO upload_jobs
             (id, username, storage_target_id, remote_prefix, status, total_files, total_bytes,
-             done_files, done_bytes, failed_files, created_at, finished_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             done_files, done_bytes, failed_files, created_at, finished_at, manifest_open)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''',
             (
                 job.get('id'),
@@ -25,6 +25,7 @@ def insert_upload_job(job):
                 job.get('failed_files', 0),
                 job.get('created_at'),
                 job.get('finished_at'),
+                1 if job.get('manifest_open') else 0,
             ),
         )
 
@@ -35,7 +36,7 @@ def get_upload_job(job_id):
     return query_one(
         '''
         SELECT id, username, storage_target_id, remote_prefix, status, total_files, total_bytes,
-               done_files, done_bytes, failed_files, created_at, finished_at
+               done_files, done_bytes, failed_files, created_at, finished_at, manifest_open
         FROM upload_jobs WHERE id = ?
         ''',
         (job_id,),
@@ -205,6 +206,49 @@ def list_stale_uploading_files(cutoff_iso):
         ''',
         (cutoff_iso,),
     )
+
+
+def list_open_manifest_jobs():
+    return query_all(
+        '''
+        SELECT id, username, storage_target_id, remote_prefix, status, total_files, total_bytes,
+               done_files, done_bytes, failed_files, created_at, finished_at, manifest_open
+        FROM upload_jobs
+        WHERE manifest_open = 1
+        ORDER BY created_at ASC
+        '''
+    )
+
+
+def job_has_recent_upload_activity(job_id, cutoff_iso):
+    row = query_one(
+        '''
+        SELECT COUNT(*) AS cnt FROM upload_files
+        WHERE job_id = ?
+          AND (
+            (last_heartbeat_at IS NOT NULL AND last_heartbeat_at >= ?)
+            OR (last_heartbeat_at IS NULL AND started_at IS NOT NULL AND started_at >= ?)
+          )
+        ''',
+        (job_id, cutoff_iso, cutoff_iso),
+    )
+    return bool(row and row['cnt'])
+
+
+def fail_active_upload_files(job_id, error):
+    now = datetime.now().isoformat()
+
+    def work(conn):
+        conn.execute(
+            '''
+            UPDATE upload_files
+            SET status = 'failed', error = ?, finished_at = ?
+            WHERE job_id = ? AND status IN ('pending', 'uploading', 'verifying')
+            ''',
+            (error, now, job_id),
+        )
+
+    run_write(work)
 
 
 def increment_upload_job_totals(job_id, add_files, add_bytes):

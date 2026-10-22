@@ -84,7 +84,7 @@
                 <div class="px-4 py-3 border-b flex flex-wrap items-center justify-between gap-2">
                     <h3 class="font-semibold text-gray-800"><i class="fas fa-laptop mr-2 text-green-600"></i>本地待传</h3>
                     <div class="flex flex-wrap gap-2">
-                        <label class="px-3 py-1.5 text-sm bg-indigo-50 text-indigo-700 rounded-lg cursor-pointer hover:bg-indigo-100">
+                        <label class="px-3 py-1.5 text-sm bg-indigo-50 text-indigo-700 rounded-lg cursor-pointer hover:bg-indigo-100" title="按层级列出子目录与文件，勾选后点击上传选中">
                             <i class="fas fa-folder-open mr-1"></i>文件夹
                             <input type="file" id="localFolderInput" webkitdirectory directory multiple class="hidden">
                         </label>
@@ -115,7 +115,7 @@
                         <tbody id="localFileList" class="divide-y divide-gray-100"></tbody>
                     </table>
                 </div>
-                <div id="localEmptyHint" class="p-8 text-center text-gray-400 text-sm">选择文件或文件夹后开始上传</div>
+                <div id="localEmptyHint" class="p-8 text-center text-gray-400 text-sm">选择文件夹后按层级列出（可折叠），勾选目录会同步子项；再点「上传选中」分批上传并自动创建云端目录</div>
             </div>
         </div>
 

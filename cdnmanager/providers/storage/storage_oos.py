@@ -207,35 +207,57 @@ def presign_get(credential, config, object_key):
     )
 
 
-def list_objects(credential, config, prefix='', delimiter='/', max_keys=500):
+def list_objects(credential, config, prefix='', delimiter='/', max_keys=1000):
     client = _client(credential, config)
-    resp = client.list_objects_v2(
-        Bucket=_bucket(config),
-        Prefix=prefix,
-        Delimiter=delimiter,
-        MaxKeys=max_keys,
-    )
     folders = []
-    for folder in resp.get('CommonPrefixes') or []:
-        p = folder.get('Prefix') or ''
-        name = p[len(prefix):].rstrip('/')
-        if name:
-            folders.append({'prefix': p, 'name': name})
     files = []
-    for obj in resp.get('Contents') or []:
-        key = obj.get('Key') or ''
-        if key == prefix or key.endswith('/'):
-            continue
-        name = key[len(prefix):] if key.startswith(prefix) else key
-        if not name or '/' in name.rstrip('/'):
-            continue
-        files.append({
-            'key': key,
-            'name': name,
-            'size': obj.get('Size') or 0,
-            'last_modified': obj.get('LastModified'),
-        })
+    token = None
+    while True:
+        kwargs = {
+            'Bucket': _bucket(config),
+            'Prefix': prefix,
+            'Delimiter': delimiter,
+            'MaxKeys': max_keys,
+        }
+        if token:
+            kwargs['ContinuationToken'] = token
+        resp = client.list_objects_v2(**kwargs)
+        for folder in resp.get('CommonPrefixes') or []:
+            p = folder.get('Prefix') or ''
+            name = p[len(prefix):].rstrip('/')
+            if name:
+                folders.append({'prefix': p, 'name': name})
+        for obj in resp.get('Contents') or []:
+            key = obj.get('Key') or ''
+            if key == prefix or key.endswith('/'):
+                continue
+            name = key[len(prefix):] if key.startswith(prefix) else key
+            if not name or '/' in name.rstrip('/'):
+                continue
+            files.append({
+                'key': key,
+                'name': name,
+                'size': obj.get('Size') or 0,
+                'last_modified': obj.get('LastModified'),
+            })
+        if not resp.get('IsTruncated'):
+            break
+        token = resp.get('NextContinuationToken')
+        if not token:
+            break
+    folders.sort(key=lambda item: item['name'].lower())
+    files.sort(key=lambda item: item['name'].lower())
     return {'prefix': prefix, 'folders': folders, 'files': files}
+
+
+def mkdir(credential, config, directory_name):
+    client = _client(credential, config)
+    key = (directory_name or '').replace('\\', '/').strip('/')
+    if not key:
+        raise ValueError('目录名不能为空')
+    key = f'{key}/'
+    client.put_object(Bucket=_bucket(config), Key=key, Body=b'')
+    return {'path': key, 'ok': True}
 
 
 def verify_object(credential, config, object_key, expected_size):

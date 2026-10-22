@@ -109,6 +109,7 @@ def create_upload_job():
     try:
         job_id, rows, _target = upload_service.create_upload_job_shell(
             user, storage_target_id, remote_prefix, first_batch=files,
+            keep_open=bool(data.get('keep_open')),
         )
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 400
@@ -152,6 +153,24 @@ def init_upload_batch(job_id):
         'total_files': job['total_files'],
         'files': [{'id': row['id'], 'relative_path': row['relative_path'], 'size': row['size']} for row in rows],
     })
+
+
+@upload_bp.route('/api/upload/jobs/<job_id>/close-manifest', methods=['POST'])
+def close_upload_manifest(job_id):
+    user, err, status = _require_login()
+    if err:
+        return err, status
+    job = db.get_upload_job(job_id)
+    if not job:
+        return jsonify({'error': 'Job 不存在'}), 404
+    access_err = _check_job_access(job, user)
+    if access_err:
+        return access_err
+    try:
+        refresh_result = upload_service.close_upload_manifest(job_id)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    return jsonify({'success': True, 'refresh': refresh_result})
 
 
 @upload_bp.route('/api/upload/files/presign-batch', methods=['POST'])

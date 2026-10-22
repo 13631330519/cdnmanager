@@ -3,10 +3,11 @@
     const PART_SIZE = 8 * 1024 * 1024;
     const BATCH_INIT_SIZE = 1000;
     const PRESIGN_BATCH_SIZE = 50;
-    const VIRTUAL_LIST_THRESHOLD = 500;
     const MAX_SMALL_CONCURRENCY = 20;
     const MAX_LARGE_CONCURRENCY = 3;
     const MAX_PART_CONCURRENCY = 6;
+    const FOLDER_FLUSH_SIZE = 200;
+    const DIR_WALK_CONCURRENCY = 6;
     const PROXY_PROVIDERS = new Set(['ftp', 'sftp', 'ftps']);
     const OSS_TARGET_PLACEHOLDERS = {
         bucket: 'Bucket 名称',
@@ -219,6 +220,8 @@
         remoteFolders: [],
         remoteFiles: [],
         canDelete: false,
+        localTree: [],
+        localFiles: [],
         localItems: [],
         uploading: false,
         cancelled: false,
@@ -227,6 +230,8 @@
         totalBytes: 0,
         currentJobId: null,
         eventSource: null,
+        localRenderOffset: 0,
+        openManifestJobId: null,
     };
 
     const els = {
@@ -362,28 +367,34 @@
         });
     }
 
+    function sortNameAsc(a, b) {
+        return String(a.name || '').localeCompare(String(b.name || ''), 'zh-CN', { sensitivity: 'base' });
+    }
+
     function renderRemoteList() {
-        const hasContent = state.remoteFolders.length || state.remoteFiles.length;
+        const folders = [...state.remoteFolders].sort(sortNameAsc);
+        const files = [...state.remoteFiles].sort(sortNameAsc);
+        const hasContent = folders.length || files.length;
         els.remoteEmpty.classList.toggle('hidden', hasContent);
         els.remoteList.innerHTML = '';
 
-        state.remoteFolders.forEach((folder) => {
+        folders.forEach((folder) => {
             const tr = document.createElement('tr');
             tr.className = 'hover:bg-indigo-50';
             tr.innerHTML = `
                 <td class="px-3 py-2"><input type="checkbox" class="remote-check rounded" data-type="folder" data-prefix="${folder.prefix}"></td>
-                <td class="px-3 py-2"><button type="button" class="remote-folder text-indigo-700 hover:underline text-left" data-prefix="${folder.prefix}"><i class="fas fa-folder text-amber-500 mr-2"></i>${folder.name}</button></td>
+                <td class="px-3 py-2"><button type="button" class="remote-folder text-indigo-700 hover:underline text-left" data-prefix="${folder.prefix}"><i class="fas fa-folder text-amber-500 mr-2"></i>${escapeHtml(folder.name)}</button></td>
                 <td class="px-3 py-2 text-right text-gray-400">—</td>
                 <td class="px-3 py-2 text-right text-gray-400">—</td>`;
             els.remoteList.appendChild(tr);
         });
 
-        state.remoteFiles.forEach((file) => {
+        files.forEach((file) => {
             const tr = document.createElement('tr');
             tr.className = 'hover:bg-gray-50';
             tr.innerHTML = `
                 <td class="px-3 py-2"><input type="checkbox" class="remote-check rounded" data-type="file" data-key="${file.key}"></td>
-                <td class="px-3 py-2 truncate max-w-[240px]" title="${file.key}"><i class="fas fa-file text-gray-400 mr-2"></i>${file.name}</td>
+                <td class="px-3 py-2 truncate max-w-[240px]" title="${escapeHtml(file.key)}"><i class="fas fa-file text-gray-400 mr-2"></i>${escapeHtml(file.name)}</td>
                 <td class="px-3 py-2 text-right text-gray-500">${formatBytes(file.size)}</td>
                 <td class="px-3 py-2 text-right text-gray-500 whitespace-nowrap">${formatDateTime(file.last_modified)}</td>`;
             els.remoteList.appendChild(tr);
@@ -391,6 +402,14 @@
 
         els.remoteDelete.classList.toggle('hidden', !state.canDelete);
         bindRemoteEvents();
+    }
+
+    function escapeHtml(value) {
+        return String(value || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
     }
 
     function bindRemoteEvents() {
@@ -427,59 +446,225 @@
         els.remoteDelete.disabled = !has || !state.canDelete;
     }
 
-    function rowsToRender() {
-        const items = state.localItems;
-        if (items.length <= VIRTUAL_LIST_THRESHOLD) {
-            return items.map((item, index) => ({ item, index }));
+    function basenameOf(path) {
+        const parts = String(path || '').replace(/\\/g, '/').split('/').filter(Boolean);
+        return parts[parts.length - 1] || path || '';
+    }
+
+    function createFolderNode(name, path) {
+        return {
+            id: `${path}/`,
+            kind: 'folder',
+            name,
+            path,
+            selected: true,
+            expanded: true,
+            children: [],
+        };
+    }
+
+    function createFileNode(file, path) {
+        return {
+            id: path,
+            kind: 'file',
+            name: basenameOf(path),
+            path,
+            file,
+            selected: true,
+            status: 'pending',
+            statusText: '待上传',
+            progress: 0,
+        };
+    }
+
+    function sortTreeChildren(children) {
+        children.sort((a, b) => {
+            if (a.kind !== b.kind) return a.kind === 'folder' ? -1 : 1;
+            return sortNameAsc(a, b);
+        });
+        return children;
+    }
+
+    function ensureFolderPath(rootChildren, folderPath) {
+        const parts = String(folderPath || '').replace(/\\/g, '/').split('/').filter(Boolean);
+        let children = rootChildren;
+        let acc = '';
+        parts.forEach((part) => {
+            acc = acc ? `${acc}/${part}` : part;
+            let folder = children.find((node) => node.kind === 'folder' && node.name === part);
+            if (!folder) {
+                folder = createFolderNode(part, acc);
+                children.push(folder);
+                sortTreeChildren(children);
+            }
+            children = folder.children;
+        });
+        return children;
+    }
+
+    function addFileToTree(rootChildren, file, path) {
+        const normalized = String(path || file.name || '').replace(/\\/g, '/').replace(/^\/+/, '');
+        if (!normalized) return null;
+        if (rootChildren === state.localTree && state.localFiles.some((item) => item.path === normalized)) {
+            return null;
         }
-        const active = [];
-        items.forEach((item, index) => {
-            if (item.status === 'uploading' || item.status === 'failed' || item.selected) {
-                active.push({ item, index });
+        const parts = normalized.split('/');
+        const fileName = parts.pop();
+        const parentChildren = parts.length ? ensureFolderPath(rootChildren, parts.join('/')) : rootChildren;
+        if (parentChildren.some((node) => node.kind === 'file' && node.name === fileName)) return null;
+        const node = createFileNode(file, normalized);
+        parentChildren.push(node);
+        sortTreeChildren(parentChildren);
+        state.localFiles.push(node);
+        state.localItems = state.localFiles;
+        return node;
+    }
+
+    function walkTree(nodes, visitor, depth = 0) {
+        nodes.forEach((node) => {
+            visitor(node, depth);
+            if (node.kind === 'folder' && node.children && node.children.length) {
+                walkTree(node.children, visitor, depth + 1);
             }
         });
-        return (active.length ? active : items.slice(0, 120).map((item, index) => ({ item, index })));
+    }
+
+    function flattenVisibleTree(nodes, depth = 0, out = []) {
+        nodes.forEach((node) => {
+            out.push({ node, depth });
+            if (node.kind === 'folder' && node.expanded) {
+                flattenVisibleTree(node.children || [], depth + 1, out);
+            }
+        });
+        return out;
+    }
+
+    function setNodeSelected(node, selected) {
+        node.selected = selected;
+        if (node.kind === 'folder') {
+            (node.children || []).forEach((child) => setNodeSelected(child, selected));
+        }
+    }
+
+    function syncFolderSelection(node) {
+        if (node.kind !== 'folder') return;
+        (node.children || []).forEach(syncFolderSelection);
+        const children = node.children || [];
+        if (!children.length) return;
+        node.selected = children.every((child) => child.selected);
+    }
+
+    function syncAllFolderSelections() {
+        state.localTree.forEach(syncFolderSelection);
+    }
+
+    function collectSelectedFiles() {
+        return state.localFiles.filter((item) => item.selected);
+    }
+
+    function collectSelectedDirectories() {
+        const dirs = new Set();
+        walkTree(state.localTree, (node) => {
+            if (node.kind !== 'folder' || !node.selected) return;
+            dirs.add(node.path);
+        });
+        collectSelectedFiles().forEach((fileNode) => {
+            const parts = fileNode.path.split('/');
+            parts.pop();
+            let acc = '';
+            parts.forEach((part) => {
+                acc = acc ? `${acc}/${part}` : part;
+                dirs.add(acc);
+            });
+        });
+        return [...dirs].sort((a, b) => a.count('/') - b.count('/') || a.localeCompare(b));
+    }
+
+    function findFileNodeByPath(path) {
+        return state.localFiles.find((item) => item.path === path);
     }
 
     function renderLocalList() {
-        const has = state.localItems.length > 0;
+        const has = state.localTree.length > 0;
         els.localEmpty.classList.toggle('hidden', has);
         els.localList.innerHTML = '';
-        let total = 0;
-        state.localItems.forEach((item) => { total += item.file.size; });
 
-        const virtual = state.localItems.length > VIRTUAL_LIST_THRESHOLD;
-        rowsToRender().forEach(({ item, index }) => {
+        const visible = flattenVisibleTree(state.localTree);
+        visible.forEach(({ node, depth }) => {
             const tr = document.createElement('tr');
-            tr.className = 'hover:bg-gray-50';
-            tr.dataset.index = String(index);
-            const statusClass = item.status === 'done' ? 'text-green-600' : item.status === 'failed' ? 'text-red-600' : 'text-gray-600';
-            tr.innerHTML = `
-                <td class="px-3 py-2"><input type="checkbox" class="local-check rounded" data-index="${index}" ${item.selected ? 'checked' : ''} ${state.uploading ? 'disabled' : ''}></td>
-                <td class="px-3 py-2 truncate max-w-[200px]" title="${item.path}">${item.path}</td>
-                <td class="px-3 py-2 text-right text-gray-500">${formatBytes(item.file.size)}</td>
-                <td class="px-3 py-2">
-                    <div class="w-full bg-gray-200 rounded-full h-1.5 mb-1"><div class="local-bar bg-green-500 h-1.5 rounded-full transition-all" style="width:${item.progress || 0}%"></div></div>
-                    <span class="text-xs ${statusClass} local-status">${item.statusText || '待上传'}</span>
-                </td>`;
+            tr.className = node.kind === 'folder' ? 'hover:bg-indigo-50' : 'hover:bg-gray-50';
+            tr.dataset.path = node.path;
+            tr.dataset.kind = node.kind;
+            const pad = 8 + depth * 16;
+            if (node.kind === 'folder') {
+                const icon = node.expanded ? 'fa-caret-down' : 'fa-caret-right';
+                tr.innerHTML = `
+                    <td class="px-3 py-2"><input type="checkbox" class="local-check rounded" data-path="${escapeHtml(node.path)}" data-kind="folder" ${node.selected ? 'checked' : ''} ${state.uploading ? 'disabled' : ''}></td>
+                    <td class="px-3 py-2">
+                        <button type="button" class="local-fold text-left w-full" data-path="${escapeHtml(node.path)}" style="padding-left:${pad}px">
+                            <i class="fas ${icon} text-gray-400 mr-1 w-3 inline-block"></i>
+                            <i class="fas fa-folder text-amber-500 mr-2"></i>${escapeHtml(node.name)}
+                        </button>
+                    </td>
+                    <td class="px-3 py-2 text-right text-gray-400">—</td>
+                    <td class="px-3 py-2 text-xs text-gray-400">${(node.children || []).length} 项</td>`;
+            } else {
+                const statusClass = node.status === 'done' ? 'text-green-600' : node.status === 'failed' ? 'text-red-600' : 'text-gray-600';
+                tr.innerHTML = `
+                    <td class="px-3 py-2"><input type="checkbox" class="local-check rounded" data-path="${escapeHtml(node.path)}" data-kind="file" ${node.selected ? 'checked' : ''} ${state.uploading ? 'disabled' : ''}></td>
+                    <td class="px-3 py-2 truncate max-w-[240px]" title="${escapeHtml(node.path)}">
+                        <span style="padding-left:${pad}px"><i class="fas fa-file text-gray-400 mr-2"></i>${escapeHtml(node.name)}</span>
+                    </td>
+                    <td class="px-3 py-2 text-right text-gray-500">${formatBytes(node.file.size)}</td>
+                    <td class="px-3 py-2">
+                        <div class="w-full bg-gray-200 rounded-full h-1.5 mb-1"><div class="local-bar bg-green-500 h-1.5 rounded-full transition-all" style="width:${node.progress || 0}%"></div></div>
+                        <span class="text-xs ${statusClass} local-status">${node.statusText || '待上传'}</span>
+                    </td>`;
+            }
             els.localList.appendChild(tr);
         });
 
-        const selectedCount = state.localItems.filter((i) => i.selected).length;
-        let summary = has
-            ? `已选 ${selectedCount}/${state.localItems.length} 个，共 ${formatBytes(total)}`
+        let total = 0;
+        state.localFiles.forEach((item) => { total += item.file.size || 0; });
+        const selectedCount = collectSelectedFiles().length;
+        els.localSummary.textContent = has
+            ? `已选 ${selectedCount}/${state.localFiles.length} 个文件，共 ${formatBytes(total)}`
             : '未选择文件';
-        if (virtual) summary += ` · 虚拟列表（${state.localItems.length} 文件，显示活跃/选中行）`;
-        els.localSummary.textContent = summary;
-        els.localUpload.disabled = !has || state.uploading || !state.localItems.some((i) => i.selected);
+        els.localUpload.disabled = !has || state.uploading || selectedCount === 0;
 
         els.localList.querySelectorAll('.local-check').forEach((cb) => {
             cb.addEventListener('change', () => {
-                const idx = parseInt(cb.dataset.index, 10);
-                state.localItems[idx].selected = cb.checked;
+                const path = cb.dataset.path;
+                if (cb.dataset.kind === 'folder') {
+                    const folder = findTreeNode(state.localTree, path, 'folder');
+                    if (folder) setNodeSelected(folder, cb.checked);
+                } else {
+                    const fileNode = findFileNodeByPath(path);
+                    if (fileNode) fileNode.selected = cb.checked;
+                }
+                syncAllFolderSelections();
                 renderLocalList();
             });
         });
+        els.localList.querySelectorAll('.local-fold').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const folder = findTreeNode(state.localTree, btn.dataset.path, 'folder');
+                if (!folder) return;
+                folder.expanded = !folder.expanded;
+                renderLocalList();
+            });
+        });
+    }
+
+    function findTreeNode(nodes, path, kind) {
+        for (const node of nodes) {
+            if (node.path === path && (!kind || node.kind === kind)) return node;
+            if (node.kind === 'folder') {
+                const found = findTreeNode(node.children || [], path, kind);
+                if (found) return found;
+            }
+        }
+        return null;
     }
 
     async function sendHeartbeat(fileId, bytesUploaded) {
@@ -569,24 +754,32 @@
 
     function addLocalFiles(fileList) {
         Array.from(fileList || []).forEach((file) => {
-            const path = file.webkitRelativePath || file.name;
-            if (state.localItems.some((item) => item.path === path)) return;
-            state.localItems.push({
-                file,
-                path,
-                selected: true,
-                status: 'pending',
-                statusText: '待上传',
-                progress: 0,
-            });
+            addFileToTree(state.localTree, file, file.webkitRelativePath || file.name);
         });
+        syncAllFolderSelections();
         renderLocalList();
     }
 
-    function updateLocalItem(index, patch) {
-        Object.assign(state.localItems[index], patch);
-        const row = els.localList.children[index];
-        if (!row) return renderLocalList();
+    function clearLocalSelection() {
+        state.localTree = [];
+        state.localFiles = [];
+        state.localItems = [];
+        renderLocalList();
+    }
+
+    function updateLocalItem(indexOrPath, patch) {
+        let node = null;
+        if (typeof indexOrPath === 'number') {
+            node = state.localFiles[indexOrPath];
+        } else if (indexOrPath && typeof indexOrPath === 'object') {
+            node = indexOrPath;
+        } else {
+            node = findFileNodeByPath(indexOrPath);
+        }
+        if (!node) return;
+        Object.assign(node, patch);
+        const row = [...els.localList.querySelectorAll('tr[data-path]')].find((tr) => tr.dataset.path === node.path);
+        if (!row) return;
         const bar = row.querySelector('.local-bar');
         const status = row.querySelector('.local-status');
         if (bar && patch.progress !== undefined) bar.style.width = `${patch.progress}%`;
@@ -837,112 +1030,326 @@
         updateGlobalProgress();
     }
 
+    function createLimiter(concurrency) {
+        let active = 0;
+        const queue = [];
+        function pump() {
+            while (active < concurrency && queue.length) {
+                const job = queue.shift();
+                active += 1;
+                Promise.resolve()
+                    .then(job.fn)
+                    .then(job.resolve, job.reject)
+                    .finally(() => {
+                        active -= 1;
+                        pump();
+                    });
+            }
+        }
+        return function limit(fn) {
+            return new Promise((resolve, reject) => {
+                queue.push({ fn, resolve, reject });
+                pump();
+            });
+        };
+    }
+
+    async function walkFileList(files, acceptFile, acceptFolder) {
+        for (const file of files) {
+            if (state.cancelled) return;
+            const path = file.webkitRelativePath || file.name;
+            const parts = String(path).replace(/\\/g, '/').split('/').filter(Boolean);
+            if (acceptFolder && parts.length > 1) {
+                await acceptFolder(parts.slice(0, -1).join('/'));
+            }
+            await acceptFile(file, path);
+        }
+    }
+
+    async function walkDirectoryHandle(dirHandle, prefix, acceptFile, acceptFolder) {
+        if (state.cancelled) return;
+        if (prefix && acceptFolder) await acceptFolder(prefix);
+        const files = [];
+        const subdirs = [];
+        for await (const [name, handle] of dirHandle.entries()) {
+            if (state.cancelled) return;
+            const path = prefix ? `${prefix}/${name}` : name;
+            if (handle.kind === 'directory') subdirs.push({ handle, path });
+            else files.push({ handle, path });
+        }
+        await Promise.all([
+            runPool(files, 8, async (entry) => {
+                if (state.cancelled) return;
+                const file = await entry.handle.getFile();
+                await acceptFile(file, entry.path);
+            }),
+            runPool(subdirs, DIR_WALK_CONCURRENCY, async (entry) => {
+                await walkDirectoryHandle(entry.handle, entry.path, acceptFile, acceptFolder);
+            }),
+        ]);
+    }
+
+    async function loadLocalFolderTree(walk) {
+        if (state.uploading) return;
+        clearLocalSelection();
+        els.globalText.textContent = '正在遍历子目录...';
+        setGlobalProgressVisible(true);
+        let discovered = 0;
+        let renderTimer = null;
+        const scheduleRender = () => {
+            if (renderTimer) return;
+            renderTimer = setTimeout(() => {
+                renderTimer = null;
+                renderLocalList();
+                els.globalText.textContent = `已列出 ${discovered} 个文件，勾选后点击「上传选中」`;
+            }, 120);
+        };
+        try {
+            await walk(
+                async (file, path) => {
+                    addFileToTree(state.localTree, file, path);
+                    discovered += 1;
+                    scheduleRender();
+                },
+                async (folderPath) => {
+                    ensureFolderPath(state.localTree, folderPath);
+                    scheduleRender();
+                },
+            );
+            syncAllFolderSelections();
+            renderLocalList();
+            els.globalText.textContent = discovered
+                ? `已列出 ${discovered} 个文件，勾选后点击「上传选中」`
+                : '文件夹里没有文件';
+        } catch (err) {
+            els.globalText.textContent = `读取文件夹失败: ${err.message || err}`;
+        } finally {
+            if (renderTimer) clearTimeout(renderTimer);
+        }
+    }
+
+    async function ensureRemoteDirectories(relativeDirs) {
+        if (!relativeDirs.length) return;
+        const remoteBase = (els.remotePath.value || '').replace(/\/+$/, '');
+        const directories = relativeDirs.map((dir) => (
+            remoteBase ? `${remoteBase}/${dir}` : dir
+        ));
+        const chunkSize = 100;
+        for (let i = 0; i < directories.length; i += chunkSize) {
+            if (state.cancelled) return;
+            const chunk = directories.slice(i, i + chunkSize);
+            await fetchJson('/api/storage/mkdir', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    target_id: els.target.value,
+                    directories: chunk,
+                }),
+            });
+        }
+    }
+
     async function startUpload() {
-        const selected = state.localItems.map((item, index) => ({ item, index })).filter(({ item }) => item.selected);
+        const selected = collectSelectedFiles().map((item) => ({
+            item,
+            index: state.localFiles.indexOf(item),
+        }));
         if (!selected.length || state.uploading) return;
+        if (!els.target.value) {
+            alert('请先选择存储目标');
+            return;
+        }
 
         state.uploading = true;
         state.cancelled = false;
         state.doneBytes = 0;
         state.fileProgress = {};
-        state.totalBytes = selected.reduce((sum, { item }) => sum + item.file.size, 0);
+        state.totalBytes = selected.reduce((sum, { item }) => sum + (item.file.size || 0), 0);
         setGlobalProgressVisible(true);
         els.localUpload.disabled = true;
         els.localCancel.classList.remove('hidden');
-        els.globalText.textContent = `正在创建 Job（${selected.length} 文件）...`;
+        els.globalText.textContent = `正在创建云端目录并分批上传（${selected.length} 文件）...`;
         updateGlobalProgress();
+        renderLocalList();
 
-        const manifest = selected.map(({ item }) => ({
-            relative_path: item.path,
-            size: item.file.size,
-            mime: item.file.type || 'application/octet-stream',
-        }));
-
-        let jobId = null;
-        const proxyUpload = isProxyUploadTarget();
         const uploadTargetId = els.target.value;
         const uploadPrefix = els.remotePath.value.trim();
-        try {
-            const jobData = await createJobInBatches(manifest);
-            jobId = jobData.jobId;
-            state.currentJobId = jobId;
-            subscribeJobStream(jobId);
+        const proxyUpload = isProxyUploadTarget();
+        const largeLimit = createLimiter(MAX_LARGE_CONCURRENCY);
+        let jobId = null;
+        let initChain = Promise.resolve();
+        let smallChain = Promise.resolve();
+        const uploads = [];
+        const smallPending = [];
+        let closed = false;
 
-            if (window.UploadIdb) {
-                await UploadIdb.saveSession({
-                    jobId,
-                    active: true,
-                    storageTargetId: els.target.value,
-                    remotePrefix: els.remotePath.value.trim(),
-                    createdAt: new Date().toISOString(),
-                    totalFiles: selected.length,
+        async function registerBatch(entries) {
+            const manifest = entries.map(({ item }) => ({
+                relative_path: item.path,
+                size: item.file.size,
+                mime: item.file.type || 'application/octet-stream',
+            }));
+            if (!jobId) {
+                const data = await fetchJson('/api/upload/jobs', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        storage_target_id: uploadTargetId,
+                        remote_prefix: uploadPrefix,
+                        keep_open: true,
+                        files: manifest,
+                    }),
                 });
-            }
-
-            if (proxyUpload) {
-                const entries = selected.map(({ item, index }, i) => ({
-                    item,
-                    index,
-                    meta: jobData.files[i],
-                }));
-                els.globalText.textContent = `正在通过服务器代理上传 0/${selected.length} 个文件...`;
-                let doneCount = 0;
-                await runPool(entries, MAX_LARGE_CONCURRENCY, async (entry) => {
-                    if (state.cancelled) return;
-                    try {
-                        await uploadProxyFile(entry, uploadTargetId, uploadPrefix);
-                    } catch (err) {
-                        updateLocalItem(entry.index, {
-                            status: 'failed',
-                            statusText: (err.message || '代理上传失败').slice(0, 80),
-                            progress: 0,
-                        });
-                    }
-                    doneCount += 1;
-                    els.globalText.textContent = `正在通过服务器代理上传 ${doneCount}/${selected.length} 个文件...`;
-                });
-            } else {
-                const large = [];
-                const small = [];
-                selected.forEach(({ item, index }, i) => {
-                    const meta = jobData.files[i];
-                    const entry = { item, index, meta };
-                    if (item.file.size > MULTIPART_THRESHOLD) large.push(entry);
-                    else small.push(entry);
-                });
-
-                els.globalText.textContent = `正在上传 0/${selected.length} 个文件...`;
-
-                let doneCount = 0;
-                async function handleLargeEntry(entry) {
-                    if (state.cancelled) return;
-                    try {
-                        await uploadSingleLocal(entry.item, entry.index, entry.meta);
-                        if (window.UploadIdb) {
-                            await UploadIdb.saveFileState(jobId, entry.meta.id, entry.item.path, { status: 'done' });
-                        }
-                    } catch (err) {
-                        updateLocalItem(entry.index, { status: 'failed', statusText: err.message.slice(0, 80), progress: 0 });
-                    }
-                    doneCount += 1;
-                    els.globalText.textContent = `正在上传 ${doneCount}/${selected.length} 个文件...`;
+                jobId = data.job_id;
+                state.currentJobId = jobId;
+                state.openManifestJobId = jobId;
+                subscribeJobStream(jobId);
+                if (window.UploadIdb) {
+                    await UploadIdb.saveSession({
+                        jobId,
+                        active: true,
+                        storageTargetId: uploadTargetId,
+                        remotePrefix: uploadPrefix,
+                        createdAt: new Date().toISOString(),
+                        totalFiles: selected.length,
+                    });
                 }
+                return data.files || [];
+            }
+            const data = await fetchJson(`/api/upload/jobs/${jobId}/init-batch`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ files: manifest }),
+            });
+            return data.files || [];
+        }
 
-                await runPool(large, MAX_LARGE_CONCURRENCY, handleLargeEntry);
-                await uploadSmallPresignBatch(small);
+        function enqueueSmall(chunk) {
+            const run = smallChain.then(() => uploadSmallPresignBatch(chunk));
+            smallChain = run.catch(() => {});
+            uploads.push(run);
+        }
+
+        function scheduleUploads(entries, metas) {
+            if (proxyUpload) {
+                entries.forEach((entry, i) => {
+                    uploads.push(largeLimit(async () => {
+                        try {
+                            await uploadProxyFile(
+                                { item: entry.item, index: entry.index, meta: metas[i] },
+                                uploadTargetId,
+                                uploadPrefix,
+                            );
+                        } catch (err) {
+                            updateLocalItem(entry.index, {
+                                status: 'failed',
+                                statusText: (err.message || '代理上传失败').slice(0, 80),
+                                progress: 0,
+                            });
+                        }
+                    }));
+                });
+                return;
+            }
+            const small = [];
+            entries.forEach((entry, i) => {
+                const packed = { item: entry.item, index: entry.index, meta: metas[i] };
+                if (entry.item.file.size > MULTIPART_THRESHOLD) {
+                    uploads.push(largeLimit(async () => {
+                        try {
+                            await uploadSingleLocal(entry.item, entry.index, metas[i]);
+                            if (window.UploadIdb) {
+                                await UploadIdb.saveFileState(jobId, metas[i].id, entry.item.path, { status: 'done' });
+                            }
+                        } catch (err) {
+                            updateLocalItem(entry.index, {
+                                status: 'failed',
+                                statusText: (err.message || '上传失败').slice(0, 80),
+                                progress: 0,
+                            });
+                        }
+                    }));
+                } else {
+                    small.push(packed);
+                }
+            });
+            smallPending.push(...small);
+            while (smallPending.length >= PRESIGN_BATCH_SIZE) {
+                enqueueSmall(smallPending.splice(0, PRESIGN_BATCH_SIZE));
+            }
+        }
+
+        async function flush(entries) {
+            if (!entries.length || state.cancelled) return;
+            const run = initChain.then(async () => {
+                if (state.cancelled) return;
+                const metas = await registerBatch(entries);
+                const readyEntries = [];
+                const readyMetas = [];
+                entries.forEach((entry, i) => {
+                    if (!metas[i]) {
+                        updateLocalItem(entry.index, { status: 'failed', statusText: '登记失败', progress: 0 });
+                        return;
+                    }
+                    readyEntries.push(entry);
+                    readyMetas.push(metas[i]);
+                });
+                scheduleUploads(readyEntries, readyMetas);
+                const done = selected.filter(({ item }) => item.status === 'done' || item.status === 'failed' || item.status === 'uploading').length;
+                els.globalText.textContent = `正在分批上传 ${Math.min(done + readyEntries.length, selected.length)}/${selected.length} ...`;
+            });
+            initChain = run.catch((err) => {
+                entries.forEach((entry) => {
+                    updateLocalItem(entry.index, {
+                        status: 'failed',
+                        statusText: (err.message || '登记失败').slice(0, 80),
+                        progress: 0,
+                    });
+                });
+            });
+            await run;
+        }
+
+        async function closeManifest() {
+            if (!jobId || closed) return;
+            closed = true;
+            state.openManifestJobId = null;
+            try {
+                await fetchJson(`/api/upload/jobs/${jobId}/close-manifest`, { method: 'POST' });
+            } catch (err) {
+                // 断网时改用 keepalive，尽量让服务端收口。
+                closeManifestKeepalive(jobId);
+                throw err;
+            }
+            if (window.UploadIdb) await UploadIdb.saveSession({ jobId, active: false });
+        }
+
+        try {
+            const dirs = collectSelectedDirectories();
+            if (dirs.length) {
+                els.globalText.textContent = `正在创建云端目录（${dirs.length}）...`;
+                await ensureRemoteDirectories(dirs);
             }
 
-            const failed = state.localItems.filter((i) => i.status === 'failed').length;
-            const succeeded = selected.length - failed;
-            if (!succeeded) {
+            for (let offset = 0; offset < selected.length; offset += FOLDER_FLUSH_SIZE) {
+                if (state.cancelled) break;
+                const chunk = selected.slice(offset, offset + FOLDER_FLUSH_SIZE);
+                await flush(chunk);
+            }
+            await initChain;
+            if (smallPending.length) enqueueSmall(smallPending.splice(0, smallPending.length));
+            await Promise.all(uploads);
+
+            const failed = selected.filter(({ item }) => item.status === 'failed').length;
+            const succeeded = selected.filter(({ item }) => item.status === 'done').length;
+            if (state.cancelled) {
+                els.globalText.textContent = `已取消：完成 ${succeeded}，失败 ${failed}`;
+            } else if (!succeeded) {
                 els.globalText.textContent = `上传结束：0 成功，${failed} 失败`;
             } else if (failed) {
                 els.globalText.textContent = `上传结束：${succeeded} 成功，${failed} 失败。已提交成功文件的 CDN 刷新`;
             } else {
-                els.globalText.textContent = `全部上传完成（${selected.length} 个文件），已提交 CDN 刷新`;
-            }
-            if (window.UploadIdb && jobId) {
-                await UploadIdb.saveSession({ jobId, active: false });
+                els.globalText.textContent = `全部上传完成（${succeeded} 个文件），已提交 CDN 刷新`;
             }
             if (state.eventSource) state.eventSource.close();
             await loadRemoteList();
@@ -950,11 +1357,49 @@
         } catch (err) {
             els.globalText.textContent = `上传失败: ${err.message}`;
         } finally {
+            try {
+                await closeManifest();
+            } catch (_) {
+                /* closeManifestKeepalive already tried */
+            }
             state.uploading = false;
             state.cancelled = false;
             els.localCancel.classList.add('hidden');
             renderLocalList();
         }
+    }
+
+    function closeManifestKeepalive(jobId) {
+        if (!jobId) return;
+        const url = `/api/upload/jobs/${jobId}/close-manifest`;
+        const body = '{}';
+        try {
+            if (navigator.sendBeacon) {
+                const blob = new Blob([body], { type: 'application/json' });
+                if (navigator.sendBeacon(url, blob)) return;
+            }
+        } catch (_) { /* fall through */ }
+        fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body,
+            keepalive: true,
+            credentials: 'same-origin',
+        }).catch(() => {});
+    }
+
+    function bindManifestUnloadGuard() {
+        const flushOpenManifest = () => {
+            const jobId = state.openManifestJobId;
+            if (!jobId) return;
+            state.openManifestJobId = null;
+            closeManifestKeepalive(jobId);
+            if (window.UploadIdb) {
+                try { UploadIdb.saveSession({ jobId, active: false }); } catch (_) { /* ignore */ }
+            }
+        };
+        window.addEventListener('pagehide', flushOpenManifest);
+        window.addEventListener('beforeunload', flushOpenManifest);
     }
 
     async function tryResumeSession() {
@@ -1058,17 +1503,37 @@
         updateRemoteActions();
     });
 
-    els.localFolder?.addEventListener('change', (e) => addLocalFiles(e.target.files));
+    els.localFolder?.closest('label')?.addEventListener('click', async (event) => {
+        if (typeof window.showDirectoryPicker !== 'function') return;
+        event.preventDefault();
+        if (state.uploading) return;
+        try {
+            const handle = await window.showDirectoryPicker({ mode: 'read' });
+            await loadLocalFolderTree((acceptFile, acceptFolder) => (
+                walkDirectoryHandle(handle, handle.name, acceptFile, acceptFolder)
+            ));
+        } catch (err) {
+            if (err && err.name === 'AbortError') return;
+            els.globalText.textContent = `读取文件夹失败: ${err.message || err}`;
+            setGlobalProgressVisible(true);
+        }
+    });
+    els.localFolder?.addEventListener('change', (e) => {
+        const files = Array.from(e.target.files || []);
+        e.target.value = '';
+        if (!files.length || state.uploading) return;
+        loadLocalFolderTree((acceptFile, acceptFolder) => walkFileList(files, acceptFile, acceptFolder));
+    });
     els.localFile?.addEventListener('change', (e) => addLocalFiles(e.target.files));
     els.localClear?.addEventListener('click', () => {
         if (state.uploading) return;
-        state.localItems = [];
-        renderLocalList();
+        clearLocalSelection();
     });
     els.localUpload?.addEventListener('click', () => startUpload());
     els.localCancel?.addEventListener('click', () => { state.cancelled = true; });
     els.localSelectAll?.addEventListener('change', () => {
-        state.localItems.forEach((item) => { item.selected = els.localSelectAll.checked; });
+        const checked = !!els.localSelectAll.checked;
+        state.localTree.forEach((node) => setNodeSelected(node, checked));
         renderLocalList();
     });
 
@@ -1087,6 +1552,7 @@
 
     document.getElementById('uploadJobHistoryReload')?.addEventListener('click', () => loadJobHistory());
 
+    bindManifestUnloadGuard();
     updateTransportHint();
     loadRemoteList().catch(() => {});
     loadJobHistory().catch(() => {});

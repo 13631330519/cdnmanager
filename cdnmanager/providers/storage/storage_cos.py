@@ -136,35 +136,60 @@ def presign_get(credential, config, object_key):
     )
 
 
-def list_objects(credential, config, prefix='', delimiter='/', max_keys=500):
+def list_objects(credential, config, prefix='', delimiter='/', max_keys=1000):
     client, _region = _client(credential, config)
-    response = client.list_objects(
-        Bucket=config['bucket'],
-        Prefix=prefix,
-        Delimiter=delimiter,
-        MaxKeys=max_keys,
-    )
     folders = []
     files = []
-    for folder in response.get('CommonPrefixes') or []:
-        folder_prefix = folder.get('Prefix', '')
-        name = folder_prefix[len(prefix):].rstrip('/')
-        if name:
-            folders.append({'prefix': folder_prefix, 'name': name})
-    for obj in response.get('Contents') or []:
-        key = obj.get('Key', '')
-        if key == prefix or key.endswith('/'):
-            continue
-        name = key[len(prefix):] if key.startswith(prefix) else key
-        if not name or '/' in name.rstrip('/'):
-            continue
-        files.append({
-            'key': key,
-            'name': name,
-            'size': int(obj.get('Size') or 0),
-            'last_modified': obj.get('LastModified'),
-        })
+    marker = ''
+    while True:
+        kwargs = {
+            'Bucket': config['bucket'],
+            'Prefix': prefix,
+            'Delimiter': delimiter,
+            'MaxKeys': max_keys,
+        }
+        if marker:
+            kwargs['Marker'] = marker
+        response = client.list_objects(**kwargs)
+        for folder in response.get('CommonPrefixes') or []:
+            folder_prefix = folder.get('Prefix', '')
+            name = folder_prefix[len(prefix):].rstrip('/')
+            if name:
+                folders.append({'prefix': folder_prefix, 'name': name})
+        for obj in response.get('Contents') or []:
+            key = obj.get('Key', '')
+            if key == prefix or key.endswith('/'):
+                continue
+            name = key[len(prefix):] if key.startswith(prefix) else key
+            if not name or '/' in name.rstrip('/'):
+                continue
+            files.append({
+                'key': key,
+                'name': name,
+                'size': int(obj.get('Size') or 0),
+                'last_modified': obj.get('LastModified'),
+            })
+        if not response.get('IsTruncated'):
+            break
+        marker = response.get('NextMarker') or ''
+        if not marker:
+            contents = response.get('Contents') or []
+            marker = contents[-1].get('Key') if contents else ''
+        if not marker:
+            break
+    folders.sort(key=lambda item: item['name'].lower())
+    files.sort(key=lambda item: item['name'].lower())
     return {'prefix': prefix, 'folders': folders, 'files': files}
+
+
+def mkdir(credential, config, directory_name):
+    client, _region = _client(credential, config)
+    key = (directory_name or '').replace('\\', '/').strip('/')
+    if not key:
+        raise ValueError('目录名不能为空')
+    key = f'{key}/'
+    client.put_object(Bucket=config['bucket'], Key=key, Body=b'')
+    return {'path': key, 'ok': True}
 
 
 def delete_objects(credential, config, object_keys):

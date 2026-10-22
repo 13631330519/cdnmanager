@@ -119,8 +119,10 @@ def list_objects(credential, config, prefix='', delimiter='/', max_keys=500):
             client, sftp, _ = _sftp_client(credential, config, provider)
             try:
                 names = sftp.listdir_attr(dir_path)
-                for entry in names[:max_keys]:
+                for entry in names:
                     name = entry.filename
+                    if name in ('.', '..'):
+                        continue
                     full = _safe_join(dir_path, name)
                     if entry.st_mode and (entry.st_mode & 0o170000) == 0o040000:
                         folders.append({'prefix': full.rstrip('/') + '/', 'name': name})
@@ -128,6 +130,8 @@ def list_objects(credential, config, prefix='', delimiter='/', max_keys=500):
                         files.append({'key': full.lstrip('/'), 'name': name, 'size': entry.st_size, 'last_modified': None})
             finally:
                 sftp.close(); client.close()
+            folders.sort(key=lambda item: item['name'].lower())
+            files.sort(key=lambda item: item['name'].lower())
             return {'prefix': prefix, 'folders': folders, 'files': files}
 
         ftp, _ = _ftp_client(credential, config, provider)
@@ -157,7 +161,9 @@ def list_objects(credential, config, prefix='', delimiter='/', max_keys=500):
                 pass
         finally:
             ftp.quit()
-        return {'prefix': prefix, 'folders': folders[:max_keys], 'files': files[:max_keys]}
+        folders.sort(key=lambda item: item['name'].lower())
+        files.sort(key=lambda item: item['name'].lower())
+        return {'prefix': prefix, 'folders': folders, 'files': files}
     except Exception as exc:
         return {'prefix': prefix, 'folders': [], 'files': [], 'error': str(exc)}
 
@@ -225,19 +231,41 @@ def upload_file(credential, config, remote_prefix, uploaded_file, resume_from=0)
         ftp.quit()
 
 
+def _ensure_remote_dir_sftp(sftp, remote_dir):
+    parts = [part for part in remote_dir.strip('/').split('/') if part]
+    current = ''
+    for part in parts:
+        current = f'{current}/{part}'
+        try:
+            sftp.stat(current)
+        except IOError:
+            sftp.mkdir(current)
+
+
+def _ensure_remote_dir_ftp(ftp, remote_dir):
+    parts = [part for part in remote_dir.strip('/').split('/') if part]
+    current = ''
+    for part in parts:
+        current = f'{current}/{part}'
+        try:
+            ftp.mkd(current)
+        except Exception:
+            pass
+
+
 def mkdir(credential, config, directory_name):
     provider = credential.get('provider') or 'ftp'
     remote_dir = _path_for_upload(config, directory_name)
     if provider == 'sftp':
         client, sftp, _ = _sftp_client(credential, config, provider)
         try:
-            sftp.mkdir(remote_dir)
+            _ensure_remote_dir_sftp(sftp, remote_dir)
             return {'path': remote_dir, 'ok': True}
         finally:
             sftp.close(); client.close()
     ftp, _ = _ftp_client(credential, config, provider)
     try:
-        ftp.mkd(remote_dir)
+        _ensure_remote_dir_ftp(ftp, remote_dir)
         return {'path': remote_dir, 'ok': True}
     finally:
         ftp.quit()
