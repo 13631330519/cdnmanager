@@ -69,3 +69,49 @@ def build_public_url(target_config, storage_key):
     if not base:
         return None
     return base.rstrip('/') + '/' + storage_key.lstrip('/')
+
+
+def normalize_object_listing(listing):
+    """Deduplicate folders/files from paginated or mixed delimiter listings."""
+    listing = listing or {}
+    folder_by_prefix = {}
+    folder_by_name = {}
+    for folder in listing.get('folders') or []:
+        prefix = (folder.get('prefix') or '').replace('\\', '/').strip()
+        if not prefix:
+            continue
+        if not prefix.endswith('/'):
+            prefix = f'{prefix}/'
+        name = (folder.get('name') or '').strip() or prefix.rstrip('/').split('/')[-1]
+        if '/' in name:
+            name = name.split('/', 1)[0]
+        if not name:
+            continue
+        item = {'prefix': prefix, 'name': name}
+        folder_by_prefix[prefix] = item
+        # 同一层级同名目录只保留一条，避免翻页/目录占位对象造成重复节点。
+        name_key = name.lower()
+        if name_key not in folder_by_name:
+            folder_by_name[name_key] = item
+
+    file_by_key = {}
+    for file_item in listing.get('files') or []:
+        key = (file_item.get('key') or '').replace('\\', '/').strip()
+        if not key or key.endswith('/'):
+            continue
+        name = (file_item.get('name') or '').strip() or key.rsplit('/', 1)[-1]
+        if '/' in name:
+            continue
+        file_by_key[key] = {
+            **file_item,
+            'key': key,
+            'name': name,
+        }
+
+    folders = sorted(folder_by_name.values(), key=lambda item: item['name'].lower())
+    files = sorted(file_by_key.values(), key=lambda item: (item.get('name') or '').lower())
+    return {
+        **listing,
+        'folders': folders,
+        'files': files,
+    }

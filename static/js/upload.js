@@ -8,6 +8,9 @@
     const MAX_PART_CONCURRENCY = 6;
     const FOLDER_FLUSH_SIZE = 200;
     const DIR_WALK_CONCURRENCY = 6;
+    const LOCAL_ROW_HEIGHT = 40;
+    const LOCAL_VIRTUAL_OVERSCAN = 10;
+    const LOCAL_BUILD_YIELD_EVERY = 250;
     const PROXY_PROVIDERS = new Set(['ftp', 'sftp', 'ftps']);
     const OSS_TARGET_PLACEHOLDERS = {
         bucket: 'Bucket 名称',
@@ -223,6 +226,8 @@
         localTree: [],
         localFiles: [],
         localItems: [],
+        folderByPath: new Map(),
+        fileByPath: new Map(),
         uploading: false,
         cancelled: false,
         fileProgress: {},
@@ -232,6 +237,9 @@
         eventSource: null,
         localRenderOffset: 0,
         openManifestJobId: null,
+        localVisibleCache: [],
+        localListBound: false,
+        localBuilding: false,
     };
 
     const els = {
@@ -254,6 +262,7 @@
         localCancel: document.getElementById('localCancelBtn'),
         localSelectAll: document.getElementById('localSelectAll'),
         localList: document.getElementById('localFileList'),
+        localListWrap: document.getElementById('localListWrap'),
         localEmpty: document.getElementById('localEmptyHint'),
         localSummary: document.getElementById('localSummary'),
         globalWrap: document.getElementById('globalProgressWrap'),
@@ -458,8 +467,10 @@
             name,
             path,
             selected: true,
-            expanded: true,
+            // 默认折叠：避免上万节点一次性挂到 DOM。
+            expanded: false,
             children: [],
+            sorted: false,
         };
     }
 
@@ -485,18 +496,37 @@
         return children;
     }
 
+    function ensureChildrenSorted(folderNode) {
+        if (!folderNode || folderNode.sorted) return;
+        sortTreeChildren(folderNode.children || []);
+        folderNode.sorted = true;
+    }
+
+    function sortTreeRecursive(nodes) {
+        sortTreeChildren(nodes);
+        nodes.forEach((node) => {
+            if (node.kind === 'folder') {
+                node.sorted = true;
+                sortTreeRecursive(node.children || []);
+            }
+        });
+    }
+
     function ensureFolderPath(rootChildren, folderPath) {
         const parts = String(folderPath || '').replace(/\\/g, '/').split('/').filter(Boolean);
         let children = rootChildren;
+        let parent = null;
         let acc = '';
         parts.forEach((part) => {
             acc = acc ? `${acc}/${part}` : part;
-            let folder = children.find((node) => node.kind === 'folder' && node.name === part);
+            let folder = state.folderByPath.get(acc);
             if (!folder) {
                 folder = createFolderNode(part, acc);
                 children.push(folder);
-                sortTreeChildren(children);
+                state.folderByPath.set(acc, folder);
+                if (parent) parent.sorted = false;
             }
+            parent = folder;
             children = folder.children;
         });
         return children;
@@ -505,16 +535,16 @@
     function addFileToTree(rootChildren, file, path) {
         const normalized = String(path || file.name || '').replace(/\\/g, '/').replace(/^\/+/, '');
         if (!normalized) return null;
-        if (rootChildren === state.localTree && state.localFiles.some((item) => item.path === normalized)) {
-            return null;
-        }
+        if (state.fileByPath.has(normalized)) return null;
         const parts = normalized.split('/');
-        const fileName = parts.pop();
+        parts.pop();
         const parentChildren = parts.length ? ensureFolderPath(rootChildren, parts.join('/')) : rootChildren;
-        if (parentChildren.some((node) => node.kind === 'file' && node.name === fileName)) return null;
+        const parentPath = parts.join('/');
+        const parentFolder = parentPath ? state.folderByPath.get(parentPath) : null;
         const node = createFileNode(file, normalized);
         parentChildren.push(node);
-        sortTreeChildren(parentChildren);
+        if (parentFolder) parentFolder.sorted = false;
+        state.fileByPath.set(normalized, node);
         state.localFiles.push(node);
         state.localItems = state.localFiles;
         return node;
@@ -533,6 +563,7 @@
         nodes.forEach((node) => {
             out.push({ node, depth });
             if (node.kind === 'folder' && node.expanded) {
+                ensureChildrenSorted(node);
                 flattenVisibleTree(node.children || [], depth + 1, out);
             }
         });
@@ -581,90 +612,163 @@
     }
 
     function findFileNodeByPath(path) {
-        return state.localFiles.find((item) => item.path === path);
+        return state.fileByPath.get(path) || null;
+    }
+
+    function findTreeNode(_nodes, path, kind) {
+        if (kind === 'folder' || !kind) {
+            const folder = state.folderByPath.get(path);
+            if (folder) return folder;
+        }
+        if (kind === 'file' || !kind) {
+            return state.fileByPath.get(path) || null;
+        }
+        return null;
+    }
+
+    function updateLocalSummary() {
+        const has = state.localTree.length > 0;
+        let total = 0;
+        state.localFiles.forEach((item) => { total += item.file.size || 0; });
+        const selectedCount = collectSelectedFiles().length;
+        const folderCount = state.folderByPath.size;
+        els.localSummary.textContent = has
+            ? `已选 ${selectedCount}/${state.localFiles.length} 个文件 · ${folderCount} 个目录 · ${formatBytes(total)}`
+            : '未选择文件';
+        els.localUpload.disabled = !has || state.uploading || selectedCount === 0 || state.localBuilding;
+    }
+
+    function buildLocalRow(node, depth) {
+        const tr = document.createElement('tr');
+        tr.className = node.kind === 'folder' ? 'hover:bg-indigo-50' : 'hover:bg-gray-50';
+        tr.dataset.path = node.path;
+        tr.dataset.kind = node.kind;
+        tr.style.height = `${LOCAL_ROW_HEIGHT}px`;
+        const pad = 8 + depth * 16;
+        if (node.kind === 'folder') {
+            const icon = node.expanded ? 'fa-caret-down' : 'fa-caret-right';
+            tr.innerHTML = `
+                <td class="px-3 py-2"><input type="checkbox" class="local-check rounded" data-path="${escapeHtml(node.path)}" data-kind="folder" ${node.selected ? 'checked' : ''} ${state.uploading ? 'disabled' : ''}></td>
+                <td class="px-3 py-2">
+                    <button type="button" class="local-fold text-left w-full" data-path="${escapeHtml(node.path)}" style="padding-left:${pad}px">
+                        <i class="fas ${icon} text-gray-400 mr-1 w-3 inline-block"></i>
+                        <i class="fas fa-folder text-amber-500 mr-2"></i>${escapeHtml(node.name)}
+                    </button>
+                </td>
+                <td class="px-3 py-2 text-right text-gray-400">—</td>
+                <td class="px-3 py-2 text-xs text-gray-400">${(node.children || []).length} 项</td>`;
+        } else {
+            const statusClass = node.status === 'done' ? 'text-green-600' : node.status === 'failed' ? 'text-red-600' : 'text-gray-600';
+            tr.innerHTML = `
+                <td class="px-3 py-2"><input type="checkbox" class="local-check rounded" data-path="${escapeHtml(node.path)}" data-kind="file" ${node.selected ? 'checked' : ''} ${state.uploading ? 'disabled' : ''}></td>
+                <td class="px-3 py-2 truncate max-w-[240px]" title="${escapeHtml(node.path)}">
+                    <span style="padding-left:${pad}px"><i class="fas fa-file text-gray-400 mr-2"></i>${escapeHtml(node.name)}</span>
+                </td>
+                <td class="px-3 py-2 text-right text-gray-500">${formatBytes(node.file.size)}</td>
+                <td class="px-3 py-2">
+                    <div class="w-full bg-gray-200 rounded-full h-1.5 mb-1"><div class="local-bar bg-green-500 h-1.5 rounded-full transition-all" style="width:${node.progress || 0}%"></div></div>
+                    <span class="text-xs ${statusClass} local-status">${node.statusText || '待上传'}</span>
+                </td>`;
+        }
+        return tr;
     }
 
     function renderLocalList() {
         const has = state.localTree.length > 0;
         els.localEmpty.classList.toggle('hidden', has);
-        els.localList.innerHTML = '';
+        sortTreeChildren(state.localTree);
 
         const visible = flattenVisibleTree(state.localTree);
-        visible.forEach(({ node, depth }) => {
-            const tr = document.createElement('tr');
-            tr.className = node.kind === 'folder' ? 'hover:bg-indigo-50' : 'hover:bg-gray-50';
-            tr.dataset.path = node.path;
-            tr.dataset.kind = node.kind;
-            const pad = 8 + depth * 16;
-            if (node.kind === 'folder') {
-                const icon = node.expanded ? 'fa-caret-down' : 'fa-caret-right';
-                tr.innerHTML = `
-                    <td class="px-3 py-2"><input type="checkbox" class="local-check rounded" data-path="${escapeHtml(node.path)}" data-kind="folder" ${node.selected ? 'checked' : ''} ${state.uploading ? 'disabled' : ''}></td>
-                    <td class="px-3 py-2">
-                        <button type="button" class="local-fold text-left w-full" data-path="${escapeHtml(node.path)}" style="padding-left:${pad}px">
-                            <i class="fas ${icon} text-gray-400 mr-1 w-3 inline-block"></i>
-                            <i class="fas fa-folder text-amber-500 mr-2"></i>${escapeHtml(node.name)}
-                        </button>
-                    </td>
-                    <td class="px-3 py-2 text-right text-gray-400">—</td>
-                    <td class="px-3 py-2 text-xs text-gray-400">${(node.children || []).length} 项</td>`;
-            } else {
-                const statusClass = node.status === 'done' ? 'text-green-600' : node.status === 'failed' ? 'text-red-600' : 'text-gray-600';
-                tr.innerHTML = `
-                    <td class="px-3 py-2"><input type="checkbox" class="local-check rounded" data-path="${escapeHtml(node.path)}" data-kind="file" ${node.selected ? 'checked' : ''} ${state.uploading ? 'disabled' : ''}></td>
-                    <td class="px-3 py-2 truncate max-w-[240px]" title="${escapeHtml(node.path)}">
-                        <span style="padding-left:${pad}px"><i class="fas fa-file text-gray-400 mr-2"></i>${escapeHtml(node.name)}</span>
-                    </td>
-                    <td class="px-3 py-2 text-right text-gray-500">${formatBytes(node.file.size)}</td>
-                    <td class="px-3 py-2">
-                        <div class="w-full bg-gray-200 rounded-full h-1.5 mb-1"><div class="local-bar bg-green-500 h-1.5 rounded-full transition-all" style="width:${node.progress || 0}%"></div></div>
-                        <span class="text-xs ${statusClass} local-status">${node.statusText || '待上传'}</span>
-                    </td>`;
-            }
-            els.localList.appendChild(tr);
-        });
+        state.localVisibleCache = visible;
+        updateLocalSummary();
+        if (!has) {
+            els.localList.innerHTML = '';
+            return;
+        }
 
-        let total = 0;
-        state.localFiles.forEach((item) => { total += item.file.size || 0; });
-        const selectedCount = collectSelectedFiles().length;
-        els.localSummary.textContent = has
-            ? `已选 ${selectedCount}/${state.localFiles.length} 个文件，共 ${formatBytes(total)}`
-            : '未选择文件';
-        els.localUpload.disabled = !has || state.uploading || selectedCount === 0;
+        const wrap = els.localListWrap;
+        const viewH = wrap ? wrap.clientHeight || 520 : 520;
+        const headerEl = wrap ? wrap.querySelector('thead') : null;
+        const headerH = headerEl ? headerEl.offsetHeight : 0;
+        // 滚动容器含 sticky 表头，内容总高度 = 表头 + 行高总和。
+        const maxScroll = Math.max(0, headerH + visible.length * LOCAL_ROW_HEIGHT - viewH);
+        if (wrap && wrap.scrollTop > maxScroll) {
+            wrap.scrollTop = maxScroll;
+        }
+        const scrollTop = wrap ? wrap.scrollTop : 0;
+        const bodyScroll = Math.max(0, scrollTop - headerH);
+        let start = Math.max(0, Math.floor(bodyScroll / LOCAL_ROW_HEIGHT) - LOCAL_VIRTUAL_OVERSCAN);
+        let end = Math.min(
+            visible.length,
+            Math.ceil((bodyScroll + Math.max(viewH - headerH, LOCAL_ROW_HEIGHT)) / LOCAL_ROW_HEIGHT) + LOCAL_VIRTUAL_OVERSCAN,
+        );
+        if (start > end) start = Math.max(0, end - 1);
+        if (visible.length && start >= visible.length) {
+            start = Math.max(0, visible.length - 1);
+            end = visible.length;
+        }
 
-        els.localList.querySelectorAll('.local-check').forEach((cb) => {
-            cb.addEventListener('change', () => {
-                const path = cb.dataset.path;
-                if (cb.dataset.kind === 'folder') {
-                    const folder = findTreeNode(state.localTree, path, 'folder');
-                    if (folder) setNodeSelected(folder, cb.checked);
-                } else {
-                    const fileNode = findFileNodeByPath(path);
-                    if (fileNode) fileNode.selected = cb.checked;
-                }
-                syncAllFolderSelections();
-                renderLocalList();
-            });
-        });
-        els.localList.querySelectorAll('.local-fold').forEach((btn) => {
-            btn.addEventListener('click', () => {
-                const folder = findTreeNode(state.localTree, btn.dataset.path, 'folder');
-                if (!folder) return;
-                folder.expanded = !folder.expanded;
-                renderLocalList();
-            });
-        });
+        const parts = [];
+        if (start > 0) {
+            parts.push(`<tr aria-hidden="true"><td colspan="4" style="height:${start * LOCAL_ROW_HEIGHT}px;padding:0;border:0;line-height:0"></td></tr>`);
+        }
+        const frag = document.createDocumentFragment();
+        const top = document.createElement('tbody');
+        top.innerHTML = parts.join('');
+        while (top.firstChild) frag.appendChild(top.firstChild);
+
+        for (let i = start; i < end; i += 1) {
+            const { node, depth } = visible[i];
+            frag.appendChild(buildLocalRow(node, depth));
+        }
+
+        if (end < visible.length) {
+            const bottom = document.createElement('tr');
+            bottom.setAttribute('aria-hidden', 'true');
+            bottom.innerHTML = `<td colspan="4" style="height:${(visible.length - end) * LOCAL_ROW_HEIGHT}px;padding:0;border:0;line-height:0"></td>`;
+            frag.appendChild(bottom);
+        }
+
+        els.localList.innerHTML = '';
+        els.localList.appendChild(frag);
+        ensureLocalListBindings();
     }
 
-    function findTreeNode(nodes, path, kind) {
-        for (const node of nodes) {
-            if (node.path === path && (!kind || node.kind === kind)) return node;
-            if (node.kind === 'folder') {
-                const found = findTreeNode(node.children || [], path, kind);
-                if (found) return found;
+    function ensureLocalListBindings() {
+        if (state.localListBound) return;
+        state.localListBound = true;
+        els.localList.addEventListener('change', (event) => {
+            const cb = event.target.closest('.local-check');
+            if (!cb) return;
+            const path = cb.dataset.path;
+            if (cb.dataset.kind === 'folder') {
+                const folder = findTreeNode(state.localTree, path, 'folder');
+                if (folder) setNodeSelected(folder, cb.checked);
+            } else {
+                const fileNode = findFileNodeByPath(path);
+                if (fileNode) fileNode.selected = cb.checked;
             }
-        }
-        return null;
+            syncAllFolderSelections();
+            renderLocalList();
+        });
+        els.localList.addEventListener('click', (event) => {
+            const btn = event.target.closest('.local-fold');
+            if (!btn) return;
+            event.preventDefault();
+            const folder = findTreeNode(state.localTree, btn.dataset.path, 'folder');
+            if (!folder) return;
+            folder.expanded = !folder.expanded;
+            if (folder.expanded) ensureChildrenSorted(folder);
+            renderLocalList();
+        });
+        els.localListWrap?.addEventListener('scroll', () => {
+            if (state.localBuilding) return;
+            window.requestAnimationFrame(() => renderLocalList());
+        }, { passive: true });
+    }
+
+    function yieldToMain() {
+        return new Promise((resolve) => setTimeout(resolve, 0));
     }
 
     async function sendHeartbeat(fileId, bytesUploaded) {
@@ -757,6 +861,7 @@
             addFileToTree(state.localTree, file, file.webkitRelativePath || file.name);
         });
         syncAllFolderSelections();
+        sortTreeRecursive(state.localTree);
         renderLocalList();
     }
 
@@ -764,6 +869,10 @@
         state.localTree = [];
         state.localFiles = [];
         state.localItems = [];
+        state.folderByPath.clear();
+        state.fileByPath.clear();
+        state.localVisibleCache = [];
+        if (els.localListWrap) els.localListWrap.scrollTop = 0;
         renderLocalList();
     }
 
@@ -1090,41 +1199,52 @@
     }
 
     async function loadLocalFolderTree(walk) {
-        if (state.uploading) return;
+        if (state.uploading || state.localBuilding) return;
         clearLocalSelection();
-        els.globalText.textContent = '正在遍历子目录...';
+        state.localBuilding = true;
+        els.localUpload.disabled = true;
+        els.globalText.textContent = '正在遍历子目录（默认折叠，构建中不刷列表）...';
         setGlobalProgressVisible(true);
         let discovered = 0;
-        let renderTimer = null;
-        const scheduleRender = () => {
-            if (renderTimer) return;
-            renderTimer = setTimeout(() => {
-                renderTimer = null;
-                renderLocalList();
-                els.globalText.textContent = `已列出 ${discovered} 个文件，勾选后点击「上传选中」`;
-            }, 120);
+        let sinceYield = 0;
+        let summaryTimer = null;
+        const scheduleSummary = () => {
+            if (summaryTimer) return;
+            summaryTimer = setTimeout(() => {
+                summaryTimer = null;
+                updateLocalSummary();
+                els.globalText.textContent = `正在构建索引：${discovered} 个文件 · ${state.folderByPath.size} 个目录`;
+            }, 200);
         };
         try {
             await walk(
                 async (file, path) => {
                     addFileToTree(state.localTree, file, path);
                     discovered += 1;
-                    scheduleRender();
+                    sinceYield += 1;
+                    scheduleSummary();
+                    if (sinceYield >= LOCAL_BUILD_YIELD_EVERY) {
+                        sinceYield = 0;
+                        await yieldToMain();
+                    }
                 },
                 async (folderPath) => {
                     ensureFolderPath(state.localTree, folderPath);
-                    scheduleRender();
+                    scheduleSummary();
                 },
             );
             syncAllFolderSelections();
+            sortTreeRecursive(state.localTree);
             renderLocalList();
             els.globalText.textContent = discovered
-                ? `已列出 ${discovered} 个文件，勾选后点击「上传选中」`
+                ? `已索引 ${discovered} 个文件（目录默认折叠，展开后再加载该层）。勾选后点击「上传选中」`
                 : '文件夹里没有文件';
         } catch (err) {
             els.globalText.textContent = `读取文件夹失败: ${err.message || err}`;
         } finally {
-            if (renderTimer) clearTimeout(renderTimer);
+            if (summaryTimer) clearTimeout(summaryTimer);
+            state.localBuilding = false;
+            updateLocalSummary();
         }
     }
 

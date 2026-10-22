@@ -173,9 +173,15 @@ def list_objects(credential, config, prefix='', delimiter='/', max_keys=1000):
             break
         marker = response.get('NextMarker') or ''
         if not marker:
+            candidates = []
+            common = response.get('CommonPrefixes') or []
             contents = response.get('Contents') or []
-            marker = contents[-1].get('Key') if contents else ''
-        if not marker:
+            if common:
+                candidates.append(common[-1].get('Prefix') or '')
+            if contents:
+                candidates.append(contents[-1].get('Key') or '')
+            marker = max(candidates) if candidates else ''
+        if not marker or marker == kwargs.get('Marker'):
             break
     folders.sort(key=lambda item: item['name'].lower())
     files.sort(key=lambda item: item['name'].lower())

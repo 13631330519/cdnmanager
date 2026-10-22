@@ -214,7 +214,7 @@ def verify_multipart_parts(adapter, credential, config, file_record, local_parts
 
 
 def refresh_completed_job_files(job, target):
-    """Refresh only files that finished uploading. Failed files are omitted."""
+    """Refresh successful uploads by highest directory prefixes, not per file."""
     if not target or not target.get('environment_id'):
         return {'success': False, 'error': '存储目标未绑定项目/环境', 'refreshed': 0, 'file_count': 0}
 
@@ -233,9 +233,8 @@ def refresh_completed_job_files(job, target):
     if not keys:
         return {'success': True, 'refreshed': 0, 'failed': 0, 'skipped': True, 'file_count': 0}
 
-    result = storage_refresh_service.refresh_files_for_target(target, keys)
-    result['file_count'] = len(keys)
-    return result
+    # 文件夹上传按最高公共目录刷新（URL 以 / 结尾），避免逐文件/逐子目录提交。
+    return storage_refresh_service.refresh_files_for_target(target, keys, collapse_dirs=True)
 
 
 def close_upload_manifest(job_id):

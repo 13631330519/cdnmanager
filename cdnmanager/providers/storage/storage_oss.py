@@ -148,9 +148,17 @@ def list_objects(credential, config, prefix='', delimiter='/', max_keys=1000):
             })
         if not result.is_truncated:
             break
-        marker = result.next_marker or ''
-        if not marker:
+        next_marker = result.next_marker or ''
+        if not next_marker:
+            candidates = []
+            if result.prefix_list:
+                candidates.append(result.prefix_list[-1])
+            if result.object_list:
+                candidates.append(result.object_list[-1].key)
+            next_marker = max(candidates) if candidates else ''
+        if not next_marker or next_marker == marker:
             break
+        marker = next_marker
     folders.sort(key=lambda item: item['name'].lower())
     files.sort(key=lambda item: item['name'].lower())
     return {'prefix': prefix, 'folders': folders, 'files': files}

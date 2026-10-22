@@ -48,6 +48,7 @@ def list_storage_objects():
     except Exception as exc:
         return jsonify({'error': f'列举对象失败: {exc}'}), 400
 
+    listing = storage_service.normalize_object_listing(listing)
     return jsonify({
         'success': True,
         'can_delete': can_storage_delete(user, target),
