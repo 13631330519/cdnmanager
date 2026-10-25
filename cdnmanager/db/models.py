@@ -308,6 +308,12 @@ def initialize_database():
             conn.execute('ALTER TABLE storage_targets ADD COLUMN project_id TEXT')
         if 'environment_id' not in columns:
             conn.execute('ALTER TABLE storage_targets ADD COLUMN environment_id TEXT')
+        conn.execute(
+            '''
+            CREATE INDEX IF NOT EXISTS idx_domains_environment_project
+            ON domains(environment_id, project_id)
+            '''
+        )
 
     run_write(work)
 

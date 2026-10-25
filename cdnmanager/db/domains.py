@@ -56,6 +56,27 @@ def find_bound_domain(host):
     return max(candidates, key=lambda d: len(d['domain']))
 
 
+_DOMAIN_COLUMNS = '''
+    domain, domain_name, provider, credential_id, cpcode, projects, environments,
+    project_id, environment_id,
+    allowed_users, added_by, added_at, refresh_status, last_refreshed_at, task_id,
+    refresh_task_status, refresh_task_detail
+'''
+
+
+def list_domains_by_environment(environment_id, project_id=None):
+    """Domains bound to one environment, optionally narrowed to one project."""
+    if not environment_id:
+        return []
+    sql = f'SELECT {_DOMAIN_COLUMNS} FROM domains WHERE environment_id = ?'
+    params = [environment_id]
+    if project_id:
+        sql += ' AND project_id = ?'
+        params.append(project_id)
+    sql += ' ORDER BY domain'
+    return query_all(sql, tuple(params))
+
+
 def load_domains():
     return query_all(
         '''
