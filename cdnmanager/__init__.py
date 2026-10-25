@@ -39,7 +39,14 @@ def create_app():
     def inject_asset_version():
         static_root = app.static_folder or ''
         versions = []
-        for rel_path in ('js/app.js', 'js/upload.js', 'css/layout.css'):
+        for rel_path in (
+            'js/app.js',
+            'js/upload-idb.js',
+            'js/storage-targets-form.js',
+            'js/storage-browser.js',
+            'js/upload-pipeline.js',
+            'css/layout.css',
+        ):
             try:
                 versions.append(int(os.path.getmtime(os.path.join(static_root, *rel_path.split('/')))))
             except OSError:

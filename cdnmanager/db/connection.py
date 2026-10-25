@@ -11,6 +11,8 @@ from cdnmanager.common import DATA_DIR, DATABASE_FILE
 JSON_FIELDS = {'allowed_users', 'projects', 'environments', 'refresh_task_detail', 'log_entry', 'target_config'}
 POLLING_LOCK_NAME = 'task_polling'
 POLLING_LEASE_SECONDS = 90
+UPLOAD_TIMEOUT_LOCK_NAME = 'upload_timeout_scan'
+UPLOAD_TIMEOUT_LEASE_SECONDS = 90
 DB_RETRY_ATTEMPTS = 5
 
 
@@ -107,15 +109,19 @@ def ensure_data_dir():
     os.makedirs(DATA_DIR, exist_ok=True)
 
 
-def try_acquire_polling_lease():
+def _try_acquire_lease(lock_name, lease_seconds):
+    """Take a short DB lease so only one gunicorn worker runs a periodic job.
+
+    The current holder may refresh the lease. Other processes skip until it expires.
+    """
     holder = _holder_id()
     now_iso = datetime.now().isoformat()
-    expires_iso = (datetime.now() + timedelta(seconds=POLLING_LEASE_SECONDS)).isoformat()
+    expires_iso = (datetime.now() + timedelta(seconds=lease_seconds)).isoformat()
 
     def work(conn):
         row = conn.execute(
             'SELECT holder_id, expires_at FROM system_locks WHERE lock_name = ?',
-            (POLLING_LOCK_NAME,),
+            (lock_name,),
         ).fetchone()
         if row and row['expires_at'] > now_iso and row['holder_id'] != holder:
             return False
@@ -128,8 +134,16 @@ def try_acquire_polling_lease():
                 acquired_at = excluded.acquired_at,
                 expires_at = excluded.expires_at
             ''',
-            (POLLING_LOCK_NAME, holder, now_iso, expires_iso),
+            (lock_name, holder, now_iso, expires_iso),
         )
         return True
 
     return run_write(work)
+
+
+def try_acquire_polling_lease():
+    return _try_acquire_lease(POLLING_LOCK_NAME, POLLING_LEASE_SECONDS)
+
+
+def try_acquire_upload_timeout_lease():
+    return _try_acquire_lease(UPLOAD_TIMEOUT_LOCK_NAME, UPLOAD_TIMEOUT_LEASE_SECONDS)

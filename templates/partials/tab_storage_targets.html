@@ -58,6 +58,7 @@
                         data-bucket="{{ cfg.get('bucket', '') }}"
                         data-region="{{ cfg.get('region', '') }}"
                         data-endpoint="{{ cfg.get('endpoint', '') }}"
+                        data-insecure-tls="{{ 1 if cfg.get('insecure_tls') else 0 }}"
                         data-allow-user-delete="{{ 1 if item.allow_user_delete else 0 }}">
                         <td class="px-4 py-3">{{ item.name }}</td>
                         <td class="px-4 py-3 text-gray-600">{{ item.binding_label or '-' }}</td>
@@ -116,6 +117,12 @@
                 <input type="text" name="bucket" id="storageTargetBucket" placeholder="Bucket 名称" class="px-3 py-2 border rounded focus:ring-2 focus:ring-indigo-500" required>
                 <input type="text" name="region" id="storageTargetRegion" placeholder="Region（如 oss-cn-hangzhou / ap-guangzhou）" class="px-3 py-2 border rounded focus:ring-2 focus:ring-indigo-500" required>
                 <input type="text" name="endpoint" id="storageTargetEndpoint" placeholder="自定义 Endpoint（可选）" class="px-3 py-2 border rounded focus:ring-2 focus:ring-indigo-500 md:col-span-2">
+                <div id="storageTargetInsecureTlsRow" class="hidden md:col-span-3">
+                    <label class="flex items-start gap-2 text-sm text-gray-600">
+                        <input type="checkbox" name="insecure_tls" value="1" id="storageTargetInsecureTls" class="rounded border-gray-300 text-indigo-600 mt-1">
+                        <span>允许不安全连接（跳过 FTPS 证书校验与 SFTP 主机密钥校验）。默认会校验。仅无法配置证书或 known_hosts 的旧环境勾选。</span>
+                    </label>
+                </div>
                 <label class="flex items-center gap-2 text-sm text-gray-600 md:col-span-3">
                     <input type="checkbox" name="allow_user_delete" value="1" class="rounded border-gray-300 text-indigo-600">
                     <span>允许普通用户删除此目标下的文件/文件夹（管理员与域名管理员始终可删）</span>
