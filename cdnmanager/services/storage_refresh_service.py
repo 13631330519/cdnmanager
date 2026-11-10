@@ -20,19 +20,9 @@ def build_cdn_file_urls(domain_name, storage_key):
 
 
 def find_domains_for_storage_target(target):
-    environment_id = target.get('environment_id')
-    project_id = target.get('project_id')
-    if not environment_id:
+    if not target:
         return []
-
-    domains = []
-    for domain in db.load_domains():
-        if domain.get('environment_id') != environment_id:
-            continue
-        if project_id and domain.get('project_id') != project_id:
-            continue
-        domains.append(domain)
-    return domains
+    return db.list_domains_by_environment(target.get('environment_id'), target.get('project_id'))
 
 
 def collapse_storage_keys_to_highest_dirs(storage_keys):

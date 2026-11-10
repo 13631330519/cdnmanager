@@ -10,6 +10,7 @@ from cdnmanager.common import (
     UPLOAD_FILE_FAILED,
     UPLOAD_FILE_PENDING,
     UPLOAD_FILE_UPLOADING,
+    UPLOAD_FILE_VERIFYING,
     UPLOAD_JOB_COMPLETED,
     UPLOAD_JOB_FAILED,
     UPLOAD_JOB_MAX_FILES,
@@ -131,13 +132,26 @@ def _job_storage_ctx(job):
 
 
 def presign_put_batch(file_ids, origin=None):
+    """Presign small-file PUT URLs.
+
+    Job, target, credential, and adapter are loaded once per job. Browser CORS
+    is ensured once per storage target in the batch, not once per file.
+    """
     if len(file_ids) > UPLOAD_PRESIGN_BATCH_MAX:
         raise ValueError(f'单次 presign 最多 {UPLOAD_PRESIGN_BATCH_MAX} 个文件')
+
+    records = {row['id']: row for row in db.get_upload_files_by_ids(file_ids)}
+    job_ids = {row['job_id'] for row in records.values()}
+    jobs = {row['id']: row for row in db.get_upload_jobs_by_ids(job_ids)}
+    ctx_by_job = {}
+    cors_ready = set()
+    running_jobs = set()
+    cors_origins = [origin] if origin else ['*']
 
     results = []
     errors = []
     for file_id in file_ids:
-        file_record = db.get_upload_file(file_id)
+        file_record = records.get(file_id)
         if not file_record:
             errors.append({'file_id': file_id, 'error': '文件不存在'})
             continue
@@ -148,18 +162,28 @@ def presign_put_batch(file_ids, origin=None):
             errors.append({'file_id': file_id, 'error': '大文件请使用 start/multipart'})
             continue
 
-        job = db.get_upload_job(file_record['job_id'])
-        try:
-            target, credential, config, adapter = _job_storage_ctx(job)
-        except ValueError as exc:
-            errors.append({'file_id': file_id, 'error': str(exc)})
+        job = jobs.get(file_record['job_id'])
+        if not job:
+            errors.append({'file_id': file_id, 'error': 'Job 不存在'})
             continue
+        if job['id'] not in ctx_by_job:
+            try:
+                ctx_by_job[job['id']] = _job_storage_ctx(job)
+            except ValueError as exc:
+                ctx_by_job[job['id']] = exc
+        ctx = ctx_by_job[job['id']]
+        if isinstance(ctx, Exception):
+            errors.append({'file_id': file_id, 'error': str(ctx)})
+            continue
+        target, credential, config, adapter = ctx
 
-        cors_origins = [origin] if origin else ['*']
-        try:
-            storage_service.ensure_browser_cors(adapter, credential, config, cors_origins)
-        except Exception as exc:
-            logger.warning('自动配置存储 CORS 失败: %s', exc)
+        target_id = target.get('id') or job['storage_target_id']
+        if target_id not in cors_ready:
+            cors_ready.add(target_id)
+            try:
+                storage_service.ensure_browser_cors(adapter, credential, config, cors_origins)
+            except Exception as exc:
+                logger.warning('自动配置存储 CORS 失败: %s', exc)
 
         try:
             upload_url = adapter.presign_put(
@@ -175,7 +199,9 @@ def presign_put_batch(file_ids, origin=None):
             'last_heartbeat_at': now,
             'error': None,
         })
-        db.update_upload_job(job['id'], {'status': UPLOAD_JOB_RUNNING})
+        if job['id'] not in running_jobs:
+            db.update_upload_job(job['id'], {'status': UPLOAD_JOB_RUNNING})
+            running_jobs.add(job['id'])
         results.append({
             'file_id': file_id,
             'mode': 'put',
@@ -183,6 +209,135 @@ def presign_put_batch(file_ids, origin=None):
             'method': 'PUT',
         })
     return results, errors
+
+
+def _complete_result(success, etag=None, error=None, status_code=200, refresh=None):
+    return {
+        'success': success,
+        'etag': etag,
+        'error': error,
+        'status_code': status_code,
+        'refresh': refresh,
+    }
+
+
+def _fail_completed_file(job_id, file_id, error):
+    db.update_upload_file(file_id, {
+        'status': UPLOAD_FILE_FAILED,
+        'error': error,
+        'finished_at': datetime.now().isoformat(),
+    })
+    db.recalculate_upload_job_stats(job_id)
+    finalize_finished_job(job_id)
+    return _complete_result(False, error=error, status_code=400)
+
+
+def complete_upload_file(job, file_record, *, etag=None, proxy=False):
+    """Validate one finished file and mark it completed.
+
+    FTP/SFTP/FTPS proxy tolerance — browser ``proxy: true`` and the external
+    complete call after ``/api/upload/proxy`` use the same rule:
+
+    When ``proxy`` is true and the target is FTP-family, ``verify_object`` is
+    best-effort. A failed SIZE/stat or a verify exception does not fail the
+    file, because the proxy endpoint already stored the bytes. A successful
+    verify still records the remote size. Object storage (OSS/COS/OOS) and
+    non-proxy completes stay strict: verify failure marks the file failed.
+
+    Routes keep authentication and decide when ``proxy`` is true. The external
+    API sets it only after the proxy upload has stored bytes, so a complete
+    before that upload still fails verification.
+    """
+    file_id = file_record['id']
+    job_id = job['id']
+    etag = (etag or '').strip().strip('"')
+
+    try:
+        target, credential, config, adapter = _job_storage_ctx(job)
+    except ValueError as exc:
+        return _complete_result(False, error=str(exc), status_code=400)
+
+    now = datetime.now().isoformat()
+    db.update_upload_file(file_id, {
+        'status': UPLOAD_FILE_VERIFYING,
+        'last_heartbeat_at': now,
+    })
+
+    ftp_family = storage_service.is_ftp_family(target.get('provider'))
+    tolerate_proxy_verify = bool(proxy) and ftp_family
+
+    if file_record.get('upload_id') and not tolerate_proxy_verify:
+        expected_parts = storage_service.total_parts_for(file_record['size'])
+        local_parts = [
+            {'part_number': part['part_number'], 'etag': part['etag']}
+            for part in db.list_upload_parts(file_id)
+            if part.get('status') == 'completed' and part.get('etag')
+        ]
+        parts, verify_err = verify_multipart_parts(
+            adapter, credential, config, file_record, local_parts,
+        )
+        if verify_err and hasattr(adapter, 'list_uploaded_parts'):
+            try:
+                remote_parts = adapter.list_uploaded_parts(
+                    credential, config, file_record['storage_key'], file_record['upload_id'],
+                )
+                if len(remote_parts) >= expected_parts:
+                    for remote_part in remote_parts:
+                        db.update_upload_part(file_id, remote_part['part_number'], {
+                            'etag': remote_part['etag'],
+                            'status': 'completed',
+                        })
+                    parts, verify_err = verify_multipart_parts(
+                        adapter, credential, config, file_record, remote_parts,
+                    )
+            except Exception as exc:
+                logger.warning('从存储拉取分片列表失败: %s', exc)
+
+        if verify_err or not parts:
+            message = verify_err or f'分片未完成: {len(local_parts)}/{expected_parts}'
+            return _fail_completed_file(job_id, file_id, message)
+        try:
+            etag = adapter.complete_multipart(
+                credential, config, file_record['storage_key'], file_record['upload_id'], parts,
+            ) or etag
+        except Exception as exc:
+            return _fail_completed_file(job_id, file_id, str(exc))
+
+    if tolerate_proxy_verify:
+        verify = {'ok': True, 'size': file_record['size'], 'etag': None}
+        try:
+            checked = adapter.verify_object(
+                credential, config, file_record['storage_key'], file_record['size'],
+            )
+            if checked.get('ok'):
+                verify = checked
+            else:
+                logger.warning(
+                    'FTP 代理上传后校验未通过，仍按上传成功处理: %s',
+                    checked.get('error') or '校验失败',
+                )
+        except Exception as exc:
+            logger.warning('FTP 代理上传后校验失败，仍按上传成功处理: %s', exc)
+    else:
+        verify = adapter.verify_object(
+            credential, config, file_record['storage_key'], file_record['size'],
+        )
+        if not verify.get('ok'):
+            return _fail_completed_file(job_id, file_id, verify.get('error') or '校验失败')
+
+    finished = datetime.now().isoformat()
+    final_etag = verify.get('etag') or etag
+    db.update_upload_file(file_id, {
+        'status': UPLOAD_FILE_COMPLETED,
+        'bytes_uploaded': file_record['size'],
+        'etag': final_etag,
+        'error': None,
+        'finished_at': finished,
+        'last_heartbeat_at': finished,
+    })
+    db.recalculate_upload_job_stats(job_id)
+    refresh_result = finalize_finished_job(job_id)
+    return _complete_result(True, etag=final_etag, refresh=refresh_result)
 
 
 def verify_multipart_parts(adapter, credential, config, file_record, local_parts):
@@ -266,12 +421,8 @@ def _finalize_finished_job(job_id):
     if job.get('status') not in {'completed', 'partial', 'failed', 'cancelled'}:
         return None
 
-    active = db.count_upload_files(job_id, status='pending')
-    active += db.count_upload_files(job_id, status='uploading')
-    active += db.count_upload_files(job_id, status='verifying')
-    if active:
-        return None
-
+    # claim_finished_job_cdn_refresh counts active files once inside the write
+    # transaction, so finalize does not repeat count_upload_files.
     if not db.claim_finished_job_cdn_refresh(job_id):
         return None
     target = db.get_storage_target(job['storage_target_id'])

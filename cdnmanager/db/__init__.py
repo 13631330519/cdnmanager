@@ -28,6 +28,7 @@ from cdnmanager.db.domains import (
     delete_domain_record,
     find_bound_domain,
     get_domain,
+    list_domains_by_environment,
     get_url_by_id,
     get_visible_domains,
     insert_url_record,
@@ -72,11 +73,14 @@ from cdnmanager.db.projects import (
 from cdnmanager.db.uploads import (
     claim_finished_job_cdn_refresh,
     cleanup_finished_upload_job,
+    count_active_upload_files,
     count_upload_files,
     count_upload_jobs,
     delete_upload_job_cascade,
     get_upload_file,
+    get_upload_files_by_ids,
     get_upload_job,
+    get_upload_jobs_by_ids,
     increment_upload_job_totals,
     insert_upload_files,
     insert_upload_job,
@@ -103,10 +107,11 @@ from cdnmanager.db.users import (
 )
 from cdnmanager.db.connection import (
     try_acquire_polling_lease,
+    try_acquire_upload_timeout_lease,
 )
 __all__ = [
     #models
-    'ensure_database','try_acquire_polling_lease',
+    'ensure_database','try_acquire_polling_lease', 'try_acquire_upload_timeout_lease',
     #users
     'delete_user', 'get_user','load_users', 'remove_user_from_domains', 'upsert_user',
     #credentials
@@ -116,6 +121,7 @@ __all__ = [
     'delete_storage_target', 'get_storage_target', 'load_storage_targets', 'upsert_storage_target',
     #domains
     'acquire_domain_refresh', 'delete_domain_record', 'find_bound_domain', 'get_domain',
+    'list_domains_by_environment',
     'get_url_by_id','get_visible_domains', 'insert_url_record', 'load_domains',
     'load_url_records', 'load_refreshing_domains','load_refreshing_urls',
     'prune_urls_for_domain', 'upsert_domain',  'update_domain_fields',
@@ -128,9 +134,11 @@ __all__ = [
     'list_storage_targets_for_environment', 'load_projects_tree', 'filter_projects_tree', 'remove_user_from_projects',
     'get_user_project_ids','sync_domain_tags_from_ids','sync_user_project_authorization',
     #uploads
-    'list_upload_jobs', 'list_upload_files', 'get_upload_job', 'get_upload_file', 'insert_upload_job',
+    'list_upload_jobs', 'list_upload_files', 'get_upload_job', 'get_upload_jobs_by_ids',
+    'get_upload_file', 'get_upload_files_by_ids', 'insert_upload_job',
     'insert_upload_files', 'update_upload_file', 'update_upload_job', 'increment_upload_job_totals',
-    'count_upload_jobs', 'count_upload_files', 'list_failed_upload_files', 'list_stale_uploading_files',
+    'count_upload_jobs', 'count_upload_files', 'count_active_upload_files',
+    'list_failed_upload_files', 'list_stale_uploading_files',
     'list_open_manifest_jobs', 'job_has_recent_upload_activity', 'fail_active_upload_files',
     'insert_upload_parts', 'list_upload_parts', 'update_upload_part', 'recalculate_upload_job_stats',
     'delete_upload_job_cascade', 'claim_finished_job_cdn_refresh', 'cleanup_finished_upload_job',

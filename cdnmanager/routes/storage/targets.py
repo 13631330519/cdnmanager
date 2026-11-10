@@ -15,6 +15,26 @@ storage_target_bp = Blueprint('storage_target_bp', __name__)
 FTP_FAMILY_PROVIDERS = {'ftp', 'sftp', 'ftps'}
 
 
+def _target_config(provider, bucket, region, endpoint, insecure_tls):
+    """Persist bucket/region/endpoint for every provider.
+
+    FTP-family targets also store host/port/root so the adapter can prefer
+    those names. bucket/region/endpoint stay populated for existing rows and
+    for the admin form, which still posts those field names.
+    """
+    config = {
+        'bucket': bucket,
+        'region': region,
+        'endpoint': endpoint,
+    }
+    if provider in FTP_FAMILY_PROVIDERS:
+        config['host'] = bucket
+        config['port'] = int(region)
+        config['root'] = endpoint or '/'
+        config['insecure_tls'] = bool(insecure_tls)
+    return config
+
+
 def _parse_binding(project_id, environment_id):
     project_id = (project_id or '').strip() or None
     environment_id = (environment_id or '').strip() or None
@@ -45,6 +65,7 @@ def save_storage_target_route():
     bucket = request.form.get('bucket', '').strip()
     region = request.form.get('region', '').strip()
     endpoint = request.form.get('endpoint', '').strip()
+    insecure_tls = request.form.get('insecure_tls') == '1'
     allow_user_delete = request.form.get('allow_user_delete') == '1'
     project_id, environment_id = _parse_binding(
         request.form.get('project_id'),
@@ -71,11 +92,7 @@ def save_storage_target_route():
         'name': name,
         'provider': provider,
         'credential_id': credential_id,
-        'target_config': {
-            'bucket': bucket,
-            'region': region,
-            'endpoint': endpoint,
-        },
+        'target_config': _target_config(provider, bucket, region, endpoint, insecure_tls),
         'cdn_domain': None,
         'project_id': project_id,
         'environment_id': environment_id,

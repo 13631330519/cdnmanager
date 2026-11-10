@@ -255,8 +255,9 @@ def api_upload_presign():
             'error': 'FTP/SFTP/FTPS 不支持预签名，请 POST /api/upload/proxy',
         }), 400
 
+    records = {row['id']: row for row in db.get_upload_files_by_ids(file_ids)}
     for file_id in file_ids:
-        file_record = db.get_upload_file(file_id)
+        file_record = records.get(file_id)
         if not file_record or file_record['job_id'] != job_id:
             return jsonify({'success': False, 'error': f'文件不存在: {file_id}'}), 404
 
@@ -375,104 +376,31 @@ def api_upload_complete():
     if not job or job['username'] != _api_user(domain_record['domain']):
         return jsonify({'success': False, 'error': 'Job 无权限'}), 403
 
-    _job_storage_ctx = upload_service._job_storage_ctx
-
     try:
-        target, credential, config, adapter = _job_storage_ctx(job)
+        target, _credential, _config, _adapter = upload_service._job_storage_ctx(job)
     except ValueError as exc:
         return jsonify({'success': False, 'error': str(exc)}), 400
 
+    # Same tolerance as the browser proxy complete: only after /api/upload/proxy
+    # has stored bytes (uploading/verifying, or bytes_uploaded > 0). A complete
+    # before that still verifies strictly and can fail.
     prior_status = file_record.get('status')
-    db.update_upload_file(file_id, {'status': UPLOAD_FILE_VERIFYING})
-    ftp_family = storage_service.is_ftp_family(target.get('provider'))
+    proxied = (
+        prior_status in {UPLOAD_FILE_UPLOADING, UPLOAD_FILE_VERIFYING}
+        or (file_record.get('bytes_uploaded') or 0) > 0
+    )
+    proxy = storage_service.is_ftp_family(target.get('provider')) and proxied
+    result = upload_service.complete_upload_file(job, file_record, etag=etag or None, proxy=proxy)
+    if not result.get('success'):
+        return jsonify({'success': False, 'error': result.get('error')}), result.get('status_code') or 400
 
-    if file_record.get('upload_id') and not ftp_family:
-        expected_parts = storage_service.total_parts_for(file_record['size'])
-        local_parts = [
-            {'part_number': part['part_number'], 'etag': part['etag']}
-            for part in db.list_upload_parts(file_id)
-            if part.get('status') == 'completed' and part.get('etag')
-        ]
-        parts, verify_err = upload_service.verify_multipart_parts(
-            adapter, credential, config, file_record, local_parts,
-        )
-        if verify_err or not parts:
-            db.update_upload_file(file_id, {
-                'status': UPLOAD_FILE_FAILED,
-                'error': verify_err or '分片校验失败',
-                'finished_at': datetime.now().isoformat(),
-            })
-            db.recalculate_upload_job_stats(job_id)
-            upload_service.finalize_finished_job(job_id)
-            return jsonify({'success': False, 'error': verify_err or '分片校验失败'}), 400
-        try:
-            etag = adapter.complete_multipart(
-                credential, config, file_record['storage_key'], file_record['upload_id'], parts,
-            ) or etag
-        except Exception as exc:
-            db.update_upload_file(file_id, {
-                'status': UPLOAD_FILE_FAILED,
-                'error': str(exc),
-                'finished_at': datetime.now().isoformat(),
-            })
-            db.recalculate_upload_job_stats(job_id)
-            upload_service.finalize_finished_job(job_id)
-            return jsonify({'success': False, 'error': str(exc)}), 400
-
-    if ftp_family:
-        checked = {'ok': False, 'error': '校验失败'}
-        try:
-            checked = adapter.verify_object(
-                credential, config, file_record['storage_key'], file_record['size'],
-            )
-        except Exception as exc:
-            logger.warning('FTP 外部代理上传后校验失败: %s', exc)
-            checked = {'ok': False, 'error': str(exc)}
-        proxied = prior_status in {UPLOAD_FILE_UPLOADING, UPLOAD_FILE_VERIFYING} or (file_record.get('bytes_uploaded') or 0) > 0
-        if checked.get('ok'):
-            verify = checked
-        elif proxied:
-            verify = {'ok': True, 'size': file_record['size'], 'etag': None}
-        else:
-            db.update_upload_file(file_id, {
-                'status': UPLOAD_FILE_FAILED,
-                'error': checked.get('error') or '校验失败',
-                'finished_at': datetime.now().isoformat(),
-            })
-            db.recalculate_upload_job_stats(job_id)
-            upload_service.finalize_finished_job(job_id)
-            return jsonify({'success': False, 'error': checked.get('error') or '校验失败'}), 400
-    else:
-        verify = adapter.verify_object(
-            credential, config, file_record['storage_key'], file_record['size'],
-        )
-        if not verify.get('ok'):
-            db.update_upload_file(file_id, {
-                'status': UPLOAD_FILE_FAILED,
-                'error': verify.get('error') or '校验失败',
-                'finished_at': datetime.now().isoformat(),
-            })
-            db.recalculate_upload_job_stats(job_id)
-            upload_service.finalize_finished_job(job_id)
-            return jsonify({'success': False, 'error': verify.get('error')}), 400
-
-    db.update_upload_file(file_id, {
-        'status': UPLOAD_FILE_COMPLETED,
-        'bytes_uploaded': file_record['size'],
-        'etag': verify.get('etag') or etag,
-        'error': None,
-        'finished_at': datetime.now().isoformat(),
-        'last_heartbeat_at': datetime.now().isoformat(),
-    })
-    db.recalculate_upload_job_stats(job_id)
-    refresh_result = upload_service.finalize_finished_job(job_id)
+    refresh_result = result.get('refresh')
     public_url = None
     if refresh_result and refresh_result.get('results'):
         public_url = refresh_result['results'][0].get('url')
-
     return jsonify({
         'success': True,
-        'etag': verify.get('etag') or etag,
+        'etag': result.get('etag'),
         'public_url': public_url,
         'refresh': refresh_result,
     })

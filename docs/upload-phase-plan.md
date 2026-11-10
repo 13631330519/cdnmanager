@@ -25,7 +25,7 @@
 | 5 | OSS 适配 | `cdnmanager/providers/storage_oss.py` — presign PUT/multipart, HEAD, complete | ✅ Phase 1 |
 | 6 | COS 适配 | `cdnmanager/providers/storage_cos.py` — 同上 | ✅ Phase 1 |
 | 7 | 上传 API | `cdnmanager/routes/storage/uploads.py` — Job/文件生命周期 | ✅ Phase 1 |
-| 8 | 上传 UI | `tab_upload.html`, `static/js/upload.js` | ✅ Phase 1 |
+| 8 | 上传 UI | `tab_upload.html`, `static/js/storage-browser.js`, `static/js/upload-pipeline.js` | ✅ Phase 1 |
 | 9 | 导航集成 | `base.html`, `index.html`, `app.py` | ✅ Phase 1 |
 | 10 | 依赖 | `oss2`, `cos-python-sdk-v5` | ✅ Phase 1 |
 

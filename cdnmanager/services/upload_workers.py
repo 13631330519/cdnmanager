@@ -46,9 +46,7 @@ def reclaim_open_manifest_jobs_once():
     reclaimed = 0
     for job in jobs:
         job_id = job['id']
-        active = db.count_upload_files(job_id, status='pending')
-        active += db.count_upload_files(job_id, status='uploading')
-        active += db.count_upload_files(job_id, status='verifying')
+        active = db.count_active_upload_files(job_id)
 
         if active == 0:
             upload_service.close_upload_manifest(job_id)
@@ -76,10 +74,13 @@ def start_upload_timeout_thread():
         return
 
     def worker():
+        # One lease per interval so multi-worker gunicorn does not scan the same
+        # stale uploads twice. The holder refreshes the 90s lease; others skip.
         while True:
             try:
-                scan_upload_timeouts_once()
-                reclaim_open_manifest_jobs_once()
+                if db.try_acquire_upload_timeout_lease():
+                    scan_upload_timeouts_once()
+                    reclaim_open_manifest_jobs_once()
             except Exception as exc:
                 logger.warning('上传超时扫描异常: %s', exc)
             time.sleep(60)

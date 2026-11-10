@@ -32,15 +32,32 @@ def insert_upload_job(job):
     run_write(work)
 
 
+_UPLOAD_JOB_COLUMNS = '''
+    id, username, storage_target_id, remote_prefix, status, total_files, total_bytes,
+    done_files, done_bytes, failed_files, created_at, finished_at, manifest_open
+'''
+
+
 def get_upload_job(job_id):
     return query_one(
-        '''
-        SELECT id, username, storage_target_id, remote_prefix, status, total_files, total_bytes,
-               done_files, done_bytes, failed_files, created_at, finished_at, manifest_open
-        FROM upload_jobs WHERE id = ?
-        ''',
+        f'SELECT {_UPLOAD_JOB_COLUMNS} FROM upload_jobs WHERE id = ?',
         (job_id,),
     )
+
+
+def get_upload_jobs_by_ids(job_ids):
+    if not job_ids:
+        return []
+    rows = []
+    ids = list(dict.fromkeys(job_ids))
+    for offset in range(0, len(ids), 400):
+        chunk = ids[offset:offset + 400]
+        placeholders = ','.join('?' for _ in chunk)
+        rows.extend(query_all(
+            f'SELECT {_UPLOAD_JOB_COLUMNS} FROM upload_jobs WHERE id IN ({placeholders})',
+            tuple(chunk),
+        ))
+    return rows
 
 
 def update_upload_job(job_id, updates):
@@ -101,13 +118,24 @@ def insert_upload_files(files):
 
 def get_upload_file(file_id):
     return query_one(
-        '''
-        SELECT id, job_id, relative_path, size, mime, status, bytes_uploaded, storage_key,
-               upload_id, etag, error, retry_count, started_at, finished_at, last_heartbeat_at
-        FROM upload_files WHERE id = ?
-        ''',
+        f'SELECT {_UPLOAD_FILE_COLUMNS} FROM upload_files WHERE id = ?',
         (file_id,),
     )
+
+
+def get_upload_files_by_ids(file_ids):
+    if not file_ids:
+        return []
+    rows = []
+    ids = list(dict.fromkeys(file_ids))
+    for offset in range(0, len(ids), 400):
+        chunk = ids[offset:offset + 400]
+        placeholders = ','.join('?' for _ in chunk)
+        rows.extend(query_all(
+            f'SELECT {_UPLOAD_FILE_COLUMNS} FROM upload_files WHERE id IN ({placeholders})',
+            tuple(chunk),
+        ))
+    return rows
 
 
 def update_upload_file(file_id, updates):
@@ -265,8 +293,14 @@ def increment_upload_job_totals(job_id, add_files, add_bytes):
     run_write(work)
 
 
-def count_upload_files(job_id, status=None):
-    if status:
+def count_upload_files(job_id, status=None, statuses=None):
+    if statuses:
+        placeholders = ','.join('?' for _ in statuses)
+        row = query_one(
+            f'SELECT COUNT(*) AS cnt FROM upload_files WHERE job_id = ? AND status IN ({placeholders})',
+            (job_id, *tuple(statuses)),
+        )
+    elif status:
         row = query_one(
             'SELECT COUNT(*) AS cnt FROM upload_files WHERE job_id = ? AND status = ?',
             (job_id, status),
@@ -274,6 +308,11 @@ def count_upload_files(job_id, status=None):
     else:
         row = query_one('SELECT COUNT(*) AS cnt FROM upload_files WHERE job_id = ?', (job_id,))
     return row['cnt'] if row else 0
+
+
+def count_active_upload_files(job_id):
+    """Files still pending, uploading, or verifying — one query."""
+    return count_upload_files(job_id, statuses=_ACTIVE_FILE_STATUSES)
 
 
 def insert_upload_parts(parts):
@@ -433,10 +472,7 @@ def cleanup_finished_upload_job(job_id):
         return False
     if job.get('status') not in {'completed', 'partial', 'failed', 'cancelled', 'refreshing'}:
         return False
-    active = count_upload_files(job_id, status='uploading')
-    active += count_upload_files(job_id, status='verifying')
-    active += count_upload_files(job_id, status='pending')
-    if active > 0:
+    if count_active_upload_files(job_id) > 0:
         return False
     delete_upload_job_cascade(job_id)
     return True
