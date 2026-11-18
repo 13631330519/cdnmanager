@@ -44,9 +44,15 @@ def list_storage_objects():
 
     list_prefix = storage_service.build_list_prefix(config, remote_prefix)
     try:
+        # FTP 适配器内部用 credential.provider 区分 ftp/sftp/ftps；补上目标上的 provider。
+        if target.get('provider') and not (config or {}).get('provider'):
+            config = {**(config or {}), 'provider': target.get('provider')}
         listing = adapter.list_objects(credential, config, prefix=list_prefix)
     except Exception as exc:
         return jsonify({'error': f'列举对象失败: {exc}'}), 400
+
+    if listing.get('error') and not (listing.get('folders') or listing.get('files')):
+        return jsonify({'error': f'列举对象失败: {listing["error"]}'}), 400
 
     listing = storage_service.normalize_object_listing(listing)
     return jsonify({

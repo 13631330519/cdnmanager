@@ -247,8 +247,87 @@ def _list_sftp_dir(sftp, config, prefix):
     return folders, files
 
 
+def _ftp_entry_name(raw_name):
+    """Normalize NLST/MLSD names that some servers return as paths."""
+    name = (raw_name or '').replace('\\', '/').rstrip('/')
+    if not name or name in ('.', '..'):
+        return ''
+    return name.rsplit('/', 1)[-1]
+
+
+def _ftp_cwd_into(ftp, config, prefix):
+    """Enter the listing directory.
+
+    Prefer relative navigation from the already-cwd'd FTP root. Absolute
+    ``/root/prefix`` paths fail on many chrooted hosts and previously caused
+    empty listings after the exception was swallowed.
+    """
+    rel = (prefix or '').replace('\\', '/').strip('/')
+    absolute = resolve_remote_path(config, rel)
+    errors = []
+
+    # Relative from current root (set by _ftp_client).
+    if rel:
+        try:
+            for part in rel.split('/'):
+                if part:
+                    ftp.cwd(part)
+            return absolute
+        except Exception as exc:
+            errors.append(f'relative:{exc}')
+            # Rewind best-effort before absolute retry.
+            root = _ftp_root(config)
+            try:
+                ftp.cwd(root if root else '/')
+            except Exception:
+                try:
+                    ftp.cwd('/')
+                except Exception:
+                    pass
+    else:
+        return absolute
+
+    try:
+        ftp.cwd(absolute)
+        return absolute
+    except Exception as exc:
+        errors.append(f'absolute:{exc}')
+        raise RuntimeError(f'无法进入目录 {absolute or "/"} ({"; ".join(errors)})') from exc
+
+
+def _iter_ftp_entries(ftp):
+    """Yield ``(name, facts)``. Fall back to NLST when MLSD is unsupported."""
+    try:
+        return [(name, facts or {}) for name, facts in ftp.mlsd()]
+    except Exception:
+        names = ftp.nlst()
+        return [(_ftp_entry_name(name), {}) for name in names]
+
+
+def _ftp_is_directory(ftp, name, facts):
+    fact_type = (facts.get('type') or '').lower()
+    if fact_type in {'dir', 'cdir', 'pdir'}:
+        return True
+    if fact_type in {'file'}:
+        return False
+    # NLST has no facts: probe with CWD (restore immediately).
+    try:
+        pwd = ftp.pwd()
+    except Exception:
+        pwd = None
+    try:
+        ftp.cwd(name)
+        if pwd is not None:
+            try:
+                ftp.cwd(pwd)
+            except Exception:
+                ftp.cwd('..')
+        return True
+    except Exception:
+        return False
+
+
 def _list_ftp_dir(ftp, config, prefix):
-    dir_path = resolve_remote_path(config, (prefix or '').strip('/'))
     folders = []
     files = []
     current = None
@@ -259,25 +338,30 @@ def _list_ftp_dir(ftp, config, prefix):
     try:
         # Do not fall back to the root listing. A missing directory must not
         # be reported as the root, or a later delete could target the wrong keys.
-        ftp.cwd(dir_path)
-        entries = ftp.mlsd() if hasattr(ftp, 'mlsd') else ftp.nlst()
-        for item in entries:
-            if isinstance(item, tuple):
-                name, facts = item
-            else:
-                name = item
-                facts = {}
-            if name in ('.', '..'):
+        dir_path = _ftp_cwd_into(ftp, config, prefix)
+        for raw_name, facts in _iter_ftp_entries(ftp):
+            name = _ftp_entry_name(raw_name)
+            if not name or name in ('.', '..'):
                 continue
             full = _safe_join(dir_path, name)
-            if facts.get('type') == 'dir':
+            if _ftp_is_directory(ftp, name, facts):
                 rel = _relative_key(config, full)
                 folders.append({'prefix': rel.rstrip('/') + '/', 'name': name})
             else:
+                size = 0
+                try:
+                    size = int(facts.get('size', 0) or 0)
+                except (TypeError, ValueError):
+                    size = 0
+                if not size:
+                    try:
+                        size = int(ftp.size(name) or 0)
+                    except Exception:
+                        size = 0
                 files.append({
                     'key': _relative_key(config, full),
                     'name': name,
-                    'size': int(facts.get('size', 0) or 0),
+                    'size': size,
                     'last_modified': facts.get('modify'),
                 })
     finally:
@@ -296,7 +380,7 @@ def _sorted_listing(prefix, folders, files):
 
 
 def list_objects(credential, config, prefix='', delimiter='/', max_keys=500):
-    provider = credential.get('provider') or 'ftp'
+    provider = (credential.get('provider') or config.get('provider') or 'ftp').lower()
     prefix = (prefix or '').replace('\\', '/')
     try:
         with _connection(credential, config, provider) as conn:
