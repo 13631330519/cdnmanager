@@ -434,7 +434,7 @@
         }
         if (!node) return;
         Object.assign(node, patch);
-        const row = [...els.localList.querySelectorAll('tr[data-path]')].find((tr) => tr.dataset.path === node.path);
+        const row = [...app.els.localList.querySelectorAll('tr[data-path]')].find((tr) => tr.dataset.path === node.path);
         if (!row) return;
         const bar = row.querySelector('.local-bar');
         const status = row.querySelector('.local-status');
