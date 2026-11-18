@@ -40,6 +40,37 @@ def insecure_tls_enabled(config):
     return bool(value)
 
 
+def format_connection_error(exc, config=None):
+    """Surface TLS/host-key failures with an actionable admin hint."""
+    message = str(exc)
+    lower = message.lower()
+    tls_hint = (
+        '服务器 TLS 证书校验失败（常见于证书过期或自签名）。'
+        '请在存储目标中勾选「允许不安全连接」，或更新远端证书。'
+    )
+    host_key_hint = (
+        'SFTP 主机密钥校验失败。'
+        '请在存储目标中勾选「允许不安全连接」，或将主机密钥加入 known_hosts。'
+    )
+    if insecure_tls_enabled(config):
+        return message
+    if any(token in lower for token in (
+        'certificate_verify_failed',
+        'certificate has expired',
+        'certificate verify failed',
+        'ssl:',
+        'sslcertverificationerror',
+    )):
+        return f'{tls_hint} 原始错误: {message}'
+    if any(token in lower for token in (
+        'unknown server host key',
+        'not found in known_hosts',
+        'rejectpolicy',
+    )):
+        return f'{host_key_hint} 原始错误: {message}'
+    return message
+
+
 def _as_port(value, default):
     if value is None or value == '':
         return default
@@ -390,7 +421,12 @@ def list_objects(credential, config, prefix='', delimiter='/', max_keys=500):
                 folders, files = _list_ftp_dir(conn, config, prefix)
         return _sorted_listing(prefix, folders, files)
     except Exception as exc:
-        return {'prefix': prefix, 'folders': [], 'files': [], 'error': str(exc)}
+        return {
+            'prefix': prefix,
+            'folders': [],
+            'files': [],
+            'error': format_connection_error(exc, config),
+        }
 
 
 def upload_file(credential, config, remote_prefix, uploaded_file, resume_from=0):

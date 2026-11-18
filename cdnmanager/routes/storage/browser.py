@@ -49,7 +49,11 @@ def list_storage_objects():
             config = {**(config or {}), 'provider': target.get('provider')}
         listing = adapter.list_objects(credential, config, prefix=list_prefix)
     except Exception as exc:
-        return jsonify({'error': f'列举对象失败: {exc}'}), 400
+        message = str(exc)
+        if target.get('provider') in {'ftp', 'sftp', 'ftps'}:
+            from cdnmanager.providers.storage.storage_ftp import format_connection_error
+            message = format_connection_error(exc, config)
+        return jsonify({'error': f'列举对象失败: {message}'}), 400
 
     if listing.get('error') and not (listing.get('folders') or listing.get('files')):
         return jsonify({'error': f'列举对象失败: {listing["error"]}'}), 400
