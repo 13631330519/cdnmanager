@@ -327,7 +327,7 @@
     }
 
     app.renameSelectedRemote = async function () {
-        const checked = [...els.remoteList.querySelectorAll('.remote-check:checked')];
+        const checked = [...app.els.remoteList.querySelectorAll('.remote-check:checked')];
         const item = checked.length === 1 ? checked[0] : null;
         if (!item) return;
         const currentName = item.dataset.type === 'file' ? item.dataset.key : item.dataset.prefix;
